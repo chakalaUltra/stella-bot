@@ -3,6 +3,7 @@ import type { Command } from "./types.js";
 
 export class StellaClient extends Client {
   public commands: Collection<string, Command> = new Collection();
+  public prefixCommands: Collection<string, import("./types.js").PrefixCommand> = new Collection();
   public cooldowns: Collection<string, Collection<string, number>> = new Collection();
 
   constructor() {

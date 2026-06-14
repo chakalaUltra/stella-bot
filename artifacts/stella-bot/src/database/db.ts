@@ -46,6 +46,7 @@ export const guildDb = {
     if (!guilds[guildId]) {
       guilds[guildId] = {
         guild_id: guildId,
+        prefix: "s!",
         log_channel: null,
         welcome_channel: null,
         welcome_message: null,

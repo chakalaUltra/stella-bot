@@ -1,5 +1,6 @@
 import { StellaClient } from "./client.js";
 import { loadCommands } from "./handlers/commands.js";
+import { loadPrefixCommands } from "./handlers/prefixCommands.js";
 import { loadEvents } from "./handlers/events.js";
 import { BOT_NAME, EMOJIS } from "./config.js";
 
@@ -16,6 +17,7 @@ const client = new StellaClient();
 console.log(`${EMOJIS.SPARKLE} Starting ${BOT_NAME}...`);
 
 await loadCommands(client);
+await loadPrefixCommands(client);
 await loadEvents(client);
 
 await client.login(token);

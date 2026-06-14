@@ -16,6 +16,7 @@ export interface Command {
 
 export interface GuildSettings {
   guild_id: string;
+  prefix: string;
   log_channel: string | null;
   welcome_channel: string | null;
   welcome_message: string | null;
@@ -24,6 +25,16 @@ export interface GuildSettings {
   ticket_support_role: string | null;
   ticket_count: number;
   created_at: number;
+}
+
+export interface PrefixCommand {
+  name: string;
+  aliases?: string[];
+  description: string;
+  usage: string;
+  category: string;
+  cooldown?: number;
+  execute: (message: import("discord.js").Message, args: string[], client: import("./client.js").StellaClient) => Promise<unknown>;
 }
 
 export interface Warning {

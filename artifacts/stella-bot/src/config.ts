@@ -31,6 +31,7 @@ export const EMOJIS = {
 } as const;
 
 export const BOT_NAME = "Stella";
+export const DEFAULT_PREFIX = "s!";
 export const BOT_VERSION = "1.0.0";
 export const BOT_FOOTER = `${EMOJIS.STAR} Stella • Your cosmic companion`;
 

@@ -1,0 +1,10 @@
+kind = "api"
+previewPath = "/stella"
+title = "Stella Bot"
+version = "1.0.0"
+
+[[services]]
+name = "Discord Bot"
+
+[services.development]
+run = "pnpm --filter @workspace/stella-bot run dev"

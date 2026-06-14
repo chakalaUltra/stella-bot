@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, type ChatInputCommandInteraction, TextChannel } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { successEmbed, errorEmbed } from "../../utils/embed.js";
+import { okReply } from "../../utils/ui.js";
 import { checkPermissions, checkBotPermissions } from "../../utils/permissions.js";
-import { EMOJIS } from "../../config.js";
 
 export default {
   category: "Moderation",
@@ -23,8 +22,6 @@ export default {
       SendMessages: false,
     }, { reason: `${reason} | Moderator: ${interaction.user.tag}` });
 
-    return interaction.reply({
-      embeds: [successEmbed(`${EMOJIS.LOCK} Channel Locked`, `This channel has been locked.\n**Reason:** ${reason}`)],
-    });
+    return interaction.reply(okReply("Channel Locked", `<#${channel.id}> is now locked.\n**Reason:** ${reason}`));
   },
 };

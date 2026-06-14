@@ -1,5 +1,4 @@
-import { createEmbed, errorEmbed } from "../../utils/embed.js";
-import { COLORS } from "../../config.js";
+import { cardReply, errReply, CLR } from "../../utils/ui.js";
 import type { PrefixCommand } from "../../types.js";
 
 const RESPONSES = [
@@ -14,7 +13,9 @@ const RESPONSES = [
   { text: "Don't count on it.", type: "negative" },
   { text: "My reply is no.", type: "negative" },
   { text: "Very doubtful.", type: "negative" },
-];
+] as const;
+
+const typeColor = { positive: CLR.SUCCESS, neutral: CLR.WARNING, negative: CLR.ERROR } as const;
 
 export default {
   name: "8ball",
@@ -25,21 +26,13 @@ export default {
   cooldown: 3,
   async execute(message, args) {
     const question = args.join(" ");
-    if (!question) return message.reply({ embeds: [errorEmbed("Please ask a question!")] });
+    if (!question) return message.reply({ ...errReply("Please ask a question!") });
 
     const response = RESPONSES[Math.floor(Math.random() * RESPONSES.length)]!;
-    const colorMap = { positive: COLORS.SUCCESS, neutral: COLORS.WARNING, negative: COLORS.ERROR } as const;
-    const emojiMap = { positive: "🟢", neutral: "🟡", negative: "🔴" } as const;
 
-    return message.reply({
-      embeds: [createEmbed({
-        title: "🎱 Magic 8-Ball",
-        color: colorMap[response.type as keyof typeof colorMap],
-        fields: [
-          { name: "❓ Question", value: question },
-          { name: `${emojiMap[response.type as keyof typeof emojiMap]} Answer`, value: `**${response.text}**` },
-        ],
-      })],
-    });
+    return message.reply(cardReply(
+      `## 8-Ball\n**Q:** ${question}\n**A:** ${response.text}`,
+      typeColor[response.type]
+    ));
   },
 } satisfies PrefixCommand;

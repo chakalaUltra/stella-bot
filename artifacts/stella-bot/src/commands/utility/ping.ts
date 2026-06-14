@@ -1,7 +1,6 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS, EMOJIS } from "../../config.js";
+import { cardReply, CLR } from "../../utils/ui.js";
 
 export default {
   category: "Utility",
@@ -11,28 +10,16 @@ export default {
     .setDescription("Check the bot's latency"),
 
   async execute(interaction: ChatInputCommandInteraction, client: StellaClient) {
-    const sent = await interaction.reply({ content: "Pinging...", fetchReply: true });
-    const roundtrip = sent.createdTimestamp - interaction.createdTimestamp;
+    await interaction.reply(cardReply("Measuring latency…"));
+
+    const roundtrip = Date.now() - interaction.createdTimestamp;
     const ws = client.ws.ping;
 
-    const getIndicator = (ms: number) => {
-      if (ms < 100) return "🟢";
-      if (ms < 250) return "🟡";
-      return "🔴";
-    };
+    const bar = (ms: number) => ms < 100 ? "🟢" : ms < 250 ? "🟡" : "🔴";
 
-    await interaction.editReply({
-      content: null,
-      embeds: [
-        createEmbed({
-          title: `${EMOJIS.PING} Pong!`,
-          color: COLORS.PRIMARY,
-          fields: [
-            { name: `${getIndicator(roundtrip)} Roundtrip`, value: `\`${roundtrip}ms\``, inline: true },
-            { name: `${getIndicator(ws)} WebSocket`, value: `\`${ws}ms\``, inline: true },
-          ],
-        }),
-      ],
-    });
+    await interaction.editReply(cardReply(
+      `## Pong!\n**Roundtrip** · ${bar(roundtrip)} \`${roundtrip}ms\`\n**WebSocket** · ${bar(ws)} \`${ws}ms\``,
+      CLR.PRIMARY
+    ));
   },
 };

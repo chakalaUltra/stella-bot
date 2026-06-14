@@ -5,63 +5,82 @@ import {
   StringSelectMenuOptionBuilder,
   ActionRowBuilder,
   ComponentType,
+  MessageFlags,
 } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed, infoEmbed } from "../../utils/embed.js";
-import { COLORS, EMOJIS, BOT_NAME } from "../../config.js";
+import { box, td, divider, CLR, type V2Reply } from "../../utils/ui.js";
+import { BOT_NAME } from "../../config.js";
 
-const CATEGORY_EMOJIS: Record<string, string> = {
-  Moderation: "🛡️",
-  Utility: "🔧",
-  Fun: "🎉",
-  Tickets: "🎫",
-  Settings: "⚙️",
+const CATEGORY_ICONS: Record<string, string> = {
+  Moderation: "Moderation",
+  Utility: "Utility",
+  Fun: "Fun",
+  Tickets: "Tickets",
+  Settings: "Settings",
 };
 
 export default {
   category: "Utility",
   data: new SlashCommandBuilder()
     .setName("help")
-    .setDescription("Browse all of Stella's commands"),
+    .setDescription(`Browse all of ${BOT_NAME}'s commands`),
 
   async execute(interaction: ChatInputCommandInteraction, client: StellaClient) {
     const categories = new Map<string, string[]>();
-
     for (const [name, cmd] of client.commands) {
       if (!categories.has(cmd.category)) categories.set(cmd.category, []);
       categories.get(cmd.category)!.push(name);
     }
 
-    const totalCommands = client.commands.size;
+    const buildHomeContainer = () => {
+      const overview = [...categories.entries()]
+        .map(([cat, cmds]) => `**${cat}** · ${cmds.length} commands`)
+        .join("\n");
 
-    const homeEmbed = createEmbed({
-      title: `${EMOJIS.STAR} ${BOT_NAME} — Command Center`,
-      description: `> Your cosmic multi-purpose Discord companion\n\nUse the menu below to explore **${totalCommands}** commands across ${categories.size} categories.`,
-      color: COLORS.PRIMARY,
-      fields: [...categories.entries()].map(([cat, cmds]) => ({
-        name: `${CATEGORY_EMOJIS[cat] ?? "📂"} ${cat}`,
-        value: `\`${cmds.length} commands\``,
-        inline: true,
-      })),
-    });
+      return box(CLR.PRIMARY, [
+        td(`## ${BOT_NAME}\nYour multi-purpose cosmic companion`),
+        divider(),
+        td(overview),
+        divider(),
+        td("-# Select a category below to see its commands"),
+      ]);
+    };
+
+    const buildCategoryContainer = (cat: string) => {
+      const cmds = categories.get(cat) ?? [];
+      const list = cmds.map(name => {
+        const cmd = client.commands.get(name)!;
+        return `**/${name}** · ${(cmd.data as SlashCommandBuilder).description}`;
+      }).join("\n");
+
+      return box(CLR.PRIMARY, [
+        td(`## ${cat}`),
+        divider(),
+        td(list || "No commands."),
+      ]);
+    };
 
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId("help_category")
-      .setPlaceholder("📂 Select a category...")
+      .setPlaceholder("Select a category…")
       .addOptions(
-        new StringSelectMenuOptionBuilder().setLabel("Home").setValue("home").setEmoji("🏠").setDescription("Overview of all categories"),
+        new StringSelectMenuOptionBuilder().setLabel("Overview").setValue("home").setDescription("All categories at a glance"),
         ...[...categories.keys()].map(cat =>
           new StringSelectMenuOptionBuilder()
             .setLabel(cat)
             .setValue(cat)
-            .setEmoji(CATEGORY_EMOJIS[cat] ?? "📂")
-            .setDescription(`View all ${categories.get(cat)!.length} ${cat.toLowerCase()} commands`)
+            .setDescription(`${categories.get(cat)!.length} commands`)
         )
       );
 
-    const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+    const menuRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-    const reply = await interaction.reply({ embeds: [homeEmbed], components: [row], fetchReply: true });
+    await interaction.reply({
+      components: [buildHomeContainer(), menuRow],
+      flags: MessageFlags.IsComponentsV2,
+    } as V2Reply);
+
+    const reply = await interaction.fetchReply();
 
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.StringSelect,
@@ -71,30 +90,16 @@ export default {
 
     collector.on("collect", async i => {
       const value = i.values[0]!;
+      const newContainer = value === "home" ? buildHomeContainer() : buildCategoryContainer(value);
 
-      if (value === "home") {
-        await i.update({ embeds: [homeEmbed], components: [row] });
-        return;
-      }
-
-      const cmds = categories.get(value) ?? [];
-      const fields = cmds.map(name => {
-        const cmd = client.commands.get(name)!;
-        return { name: `\`/${name}\``, value: (cmd.data as SlashCommandBuilder).description, inline: true };
-      });
-
-      const categoryEmbed = createEmbed({
-        title: `${CATEGORY_EMOJIS[value] ?? "📂"} ${value} Commands`,
-        description: `${cmds.length} command(s) in this category`,
-        color: COLORS.NEUTRAL,
-        fields,
-      });
-
-      await i.update({ embeds: [categoryEmbed], components: [row] });
+      await i.update({
+        components: [newContainer, menuRow],
+        flags: MessageFlags.IsComponentsV2,
+      } as V2Reply);
     });
 
     collector.on("end", () => {
-      interaction.editReply({ components: [] }).catch(() => null);
+      interaction.editReply({ components: [buildHomeContainer()] }).catch(() => null);
     });
   },
 };

@@ -1,5 +1,5 @@
 import { PermissionFlagsBits } from "discord.js";
-import { successEmbed, errorEmbed } from "../../utils/embed.js";
+import { okReply, errReply, cardReply, CLR } from "../../utils/ui.js";
 import { guildDb } from "../../database/db.js";
 import type { PrefixCommand } from "../../types.js";
 
@@ -11,20 +11,20 @@ export default {
   category: "Settings",
   async execute(message, args) {
     if (!message.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-      return message.reply({ embeds: [errorEmbed("You need **Manage Server** permission.")] });
+      return message.reply({ ...errReply("You need **Manage Server** permission.") });
     }
 
     const newPrefix = args[0];
     if (!newPrefix) {
       const current = guildDb.get(message.guild!.id).prefix;
-      return message.reply({ embeds: [successEmbed("Current Prefix", `The current prefix is \`${current}\``)] });
+      return message.reply(cardReply(`## Current Prefix\n\`${current}\``, CLR.PRIMARY));
     }
 
     if (newPrefix.length > 5) {
-      return message.reply({ embeds: [errorEmbed("Prefix must be 5 characters or less.")] });
+      return message.reply({ ...errReply("Prefix must be 5 characters or less.") });
     }
 
     guildDb.update(message.guild!.id, { prefix: newPrefix });
-    return message.reply({ embeds: [successEmbed("Prefix Updated", `Prefix changed to \`${newPrefix}\`\nExample: \`${newPrefix}help\``)] });
+    return message.reply(okReply("Prefix Updated", `New prefix: \`${newPrefix}\`\nExample: \`${newPrefix}help\``));
   },
 } satisfies PrefixCommand;

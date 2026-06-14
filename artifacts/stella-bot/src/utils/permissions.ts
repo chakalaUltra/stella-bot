@@ -1,7 +1,7 @@
 import type { ChatInputCommandInteraction, GuildMember } from "discord.js";
 import { PermissionFlagsBits } from "discord.js";
 import { permissionDb } from "../database/db.js";
-import { errorEmbed } from "./embed.js";
+import { errReply } from "./ui.js";
 
 export async function checkPermissions(
   interaction: ChatInputCommandInteraction,
@@ -18,10 +18,7 @@ export async function checkPermissions(
     const access = permissionDb.checkAccess(interaction.guildId, commandName, roleIds);
 
     if (access === false) {
-      await interaction.reply({
-        embeds: [errorEmbed("You don't have permission to use this command.")],
-        ephemeral: true,
-      });
+      await interaction.reply({ ...errReply("You don't have permission to use this command."), ephemeral: true });
       return false;
     }
 
@@ -34,7 +31,7 @@ export async function checkPermissions(
         .find(([, v]) => v === perm)?.[0] ?? "Unknown Permission";
 
       await interaction.reply({
-        embeds: [errorEmbed(`You need the **${permName}** permission to use this command.`)],
+        ...errReply(`You need the **${permName}** permission to use this command.`),
         ephemeral: true,
       });
       return false;
@@ -57,7 +54,7 @@ export async function checkBotPermissions(
         .find(([, v]) => v === perm)?.[0] ?? "Unknown Permission";
 
       await interaction.reply({
-        embeds: [errorEmbed(`I need the **${permName}** permission to execute this command.`)],
+        ...errReply(`I need the **${permName}** permission to do that.`),
         ephemeral: true,
       });
       return false;

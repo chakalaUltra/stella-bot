@@ -1,13 +1,8 @@
-import {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  type ChatInputCommandInteraction,
-} from "discord.js";
+import { SlashCommandBuilder, PermissionFlagsBits, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed, successEmbed, errorEmbed } from "../../utils/embed.js";
+import { cardReply, okReply, infoReply, CLR } from "../../utils/ui.js";
 import { checkPermissions } from "../../utils/permissions.js";
 import { warningDb } from "../../database/db.js";
-import { COLORS, EMOJIS } from "../../config.js";
 
 export default {
   category: "Moderation",
@@ -38,50 +33,38 @@ export default {
       const warns = warningDb.getAll(interaction.guildId!, target.id);
 
       if (warns.length === 0) {
-        return interaction.reply({
-          embeds: [
-            createEmbed({
-              title: `${EMOJIS.SHIELD} Warnings — ${target.username}`,
-              description: "This user has no warnings. Clean record! ✨",
-              color: COLORS.SUCCESS,
-            }),
-          ],
-        });
+        return interaction.reply(cardReply(
+          `## ${target.username} — Warnings\nNo warnings on record.`,
+          CLR.SUCCESS
+        ));
       }
 
-      const fields = warns.slice(0, 10).map((w, i) => ({
-        name: `#${i + 1} — ID: ${w.id}`,
-        value: `**Reason:** ${w.reason}\n**By:** <@${w.moderator_id}> • <t:${w.created_at}:R>`,
-      }));
+      const list = warns.slice(0, 10).map((w, i) =>
+        `**#${i + 1}** · ID \`${w.id}\`\n${w.reason}\n-# By <@${w.moderator_id}> · <t:${w.created_at}:R>`
+      ).join("\n\n");
 
-      return interaction.reply({
-        embeds: [
-          createEmbed({
-            title: `${EMOJIS.WARN} Warnings — ${target.username}`,
-            description: `**${warns.length}** warning(s) total`,
-            color: COLORS.WARNING,
-            fields,
-            thumbnail: target.displayAvatarURL(),
-          }),
-        ],
-      });
+      return interaction.reply(infoReply({
+        title: `${target.username} — Warnings`,
+        subtitle: `${warns.length} warning(s) total`,
+        thumbnail: target.displayAvatarURL({ size: 128 }),
+        rows: warns.slice(0, 10).map((w, i) => [
+          `#${i + 1} (ID ${w.id})`,
+          `${w.reason} · <@${w.moderator_id}> · <t:${w.created_at}:R>`,
+        ]),
+        color: CLR.WARNING,
+      }));
     }
 
     if (sub === "clear") {
       const target = interaction.options.getUser("user", true);
       const count = warningDb.clear(interaction.guildId!, target.id);
-
-      return interaction.reply({
-        embeds: [successEmbed("Warnings Cleared", `Cleared **${count}** warning(s) for ${target.tag}.`)],
-      });
+      return interaction.reply(okReply("Warnings Cleared", `Removed **${count}** warning(s) from **${target.tag}**.`));
     }
 
     if (sub === "remove") {
       const id = interaction.options.getInteger("id", true);
       warningDb.remove(id);
-      return interaction.reply({
-        embeds: [successEmbed("Warning Removed", `Warning **#${id}** has been removed.`)],
-      });
+      return interaction.reply(okReply("Warning Removed", `Warning **#${id}** has been deleted.`));
     }
   },
 };

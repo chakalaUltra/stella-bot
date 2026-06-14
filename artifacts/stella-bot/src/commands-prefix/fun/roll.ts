@@ -1,5 +1,4 @@
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS } from "../../config.js";
+import { cardReply, CLR } from "../../utils/ui.js";
 import type { PrefixCommand } from "../../types.js";
 
 export default {
@@ -15,15 +14,10 @@ export default {
     const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
     const total = rolls.reduce((a, b) => a + b, 0);
 
-    return message.reply({
-      embeds: [createEmbed({
-        title: `🎲 Dice Roll — d${sides}`,
-        color: COLORS.PRIMARY,
-        fields: [
-          { name: "🎯 Rolls", value: rolls.map((r, i) => `Die ${i + 1}: **${r}**`).join("\n"), inline: true },
-          ...(count > 1 ? [{ name: "📊 Total", value: `**${total}**`, inline: true }] : []),
-        ],
-      })],
-    });
+    const rollLine = count === 1
+      ? `Result: **${rolls[0]}**`
+      : `Rolls: ${rolls.map((r, i) => `Die ${i + 1} → **${r}**`).join(" · ")}\nTotal: **${total}**`;
+
+    return message.reply(cardReply(`## Dice Roll · d${sides}\n${rollLine}`, CLR.PRIMARY));
   },
 } satisfies PrefixCommand;

@@ -1,5 +1,4 @@
-import { createEmbed, errorEmbed } from "../../utils/embed.js";
-import { COLORS } from "../../config.js";
+import { cardReply, errReply, CLR } from "../../utils/ui.js";
 import type { PrefixCommand } from "../../types.js";
 
 export default {
@@ -12,18 +11,14 @@ export default {
   async execute(message, args) {
     const input = args.join(" ");
     const choices = input.split(",").map(s => s.trim()).filter(Boolean);
-    if (choices.length < 2) return message.reply({ embeds: [errorEmbed("Provide at least **2 options** separated by commas.")] });
+    if (choices.length < 2) return message.reply({ ...errReply("Provide at least **2 options** separated by commas.") });
 
     const chosen = choices[Math.floor(Math.random() * choices.length)]!;
-    return message.reply({
-      embeds: [createEmbed({
-        title: "✨ Stella's Choice",
-        color: COLORS.INFO,
-        fields: [
-          { name: "📋 Options", value: choices.map((c, i) => `${i + 1}. ${c}`).join("\n"), inline: true },
-          { name: "🎯 Chosen", value: `**${chosen}**`, inline: true },
-        ],
-      })],
-    });
+    const list = choices.map((c, i) => `${i + 1}. ${c}`).join("\n");
+
+    return message.reply(cardReply(
+      `## Choice\n**Options:**\n${list}\n\n**Answer:** ${chosen}`,
+      CLR.INFO
+    ));
   },
 } satisfies PrefixCommand;

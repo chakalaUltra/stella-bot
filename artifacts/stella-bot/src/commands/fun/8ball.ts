@@ -1,7 +1,6 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS } from "../../config.js";
+import { cardReply, CLR } from "../../utils/ui.js";
 
 const RESPONSES = [
   { text: "It is certain.", type: "positive" },
@@ -24,7 +23,9 @@ const RESPONSES = [
   { text: "My sources say no.", type: "negative" },
   { text: "Outlook not so good.", type: "negative" },
   { text: "Very doubtful.", type: "negative" },
-];
+] as const;
+
+const typeColor = { positive: CLR.SUCCESS, neutral: CLR.WARNING, negative: CLR.ERROR } as const;
 
 export default {
   category: "Fun",
@@ -32,35 +33,15 @@ export default {
   data: new SlashCommandBuilder()
     .setName("8ball")
     .setDescription("Ask the magic 8-ball a question")
-    .addStringOption(o => o.setName("question").setDescription("Your question for the 8-ball").setRequired(true)),
+    .addStringOption(o => o.setName("question").setDescription("Your question").setRequired(true)),
 
   async execute(interaction: ChatInputCommandInteraction, _client: StellaClient) {
     const question = interaction.options.getString("question", true);
     const response = RESPONSES[Math.floor(Math.random() * RESPONSES.length)]!;
 
-    const colorMap = {
-      positive: COLORS.SUCCESS,
-      neutral: COLORS.WARNING,
-      negative: COLORS.ERROR,
-    } as const;
-
-    const emojiMap = {
-      positive: "🟢",
-      neutral: "🟡",
-      negative: "🔴",
-    } as const;
-
-    return interaction.reply({
-      embeds: [
-        createEmbed({
-          title: "🎱 Magic 8-Ball",
-          color: colorMap[response.type as keyof typeof colorMap],
-          fields: [
-            { name: "❓ Question", value: question },
-            { name: `${emojiMap[response.type as keyof typeof emojiMap]} Answer`, value: `**${response.text}**` },
-          ],
-        }),
-      ],
-    });
+    return interaction.reply(cardReply(
+      `## 8-Ball\n**Q:** ${question}\n**A:** ${response.text}`,
+      typeColor[response.type]
+    ));
   },
 };

@@ -5,10 +5,9 @@ import {
   ChannelType,
 } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed, successEmbed, errorEmbed } from "../../utils/embed.js";
+import { errReply, okReply, infoReply, cardReply, CLR } from "../../utils/ui.js";
 import { checkPermissions } from "../../utils/permissions.js";
 import { guildDb, permissionDb } from "../../database/db.js";
-import { COLORS, EMOJIS } from "../../config.js";
 
 export default {
   category: "Settings",
@@ -16,27 +15,21 @@ export default {
     .setName("settings")
     .setDescription("Manage server settings")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand(s =>
-      s.setName("view").setDescription("View all current server settings")
-    )
+    .addSubcommand(s => s.setName("view").setDescription("View all current server settings"))
     .addSubcommand(s =>
       s.setName("logs")
         .setDescription("Set the moderation log channel")
         .addChannelOption(o =>
-          o.setName("channel")
-            .setDescription("The log channel (leave empty to disable)")
-            .addChannelTypes(ChannelType.GuildText)
-            .setRequired(false)
+          o.setName("channel").setDescription("The log channel (leave empty to disable)")
+            .addChannelTypes(ChannelType.GuildText).setRequired(false)
         )
     )
     .addSubcommand(s =>
       s.setName("welcome")
         .setDescription("Configure the welcome message")
         .addChannelOption(o =>
-          o.setName("channel")
-            .setDescription("Welcome channel (leave empty to disable)")
-            .addChannelTypes(ChannelType.GuildText)
-            .setRequired(false)
+          o.setName("channel").setDescription("Welcome channel (leave empty to disable)")
+            .addChannelTypes(ChannelType.GuildText).setRequired(false)
         )
         .addStringOption(o =>
           o.setName("message")
@@ -45,29 +38,27 @@ export default {
         )
     )
     .addSubcommand(s =>
-      s.setName("permissions")
-        .setDescription("Set command permissions for a role")
+      s.setName("prefix")
+        .setDescription("Change the bot prefix for this server")
         .addStringOption(o =>
-          o.setName("command").setDescription("Command name (without /)").setRequired(true)
-        )
-        .addRoleOption(o =>
-          o.setName("role").setDescription("The role to configure").setRequired(true)
-        )
-        .addStringOption(o =>
-          o.setName("access")
-            .setDescription("Allow or deny access")
-            .setRequired(true)
-            .addChoices(
-              { name: "✅ Allow", value: "allow" },
-              { name: "❌ Deny", value: "deny" },
-              { name: "🗑️ Reset", value: "reset" }
-            )
+          o.setName("prefix").setDescription("New prefix (max 5 chars)").setRequired(true)
         )
     )
     .addSubcommand(s =>
-      s.setName("viewperms")
-        .setDescription("View all configured command permissions")
-    ),
+      s.setName("permissions")
+        .setDescription("Set command permissions for a role")
+        .addStringOption(o => o.setName("command").setDescription("Command name (without /)").setRequired(true))
+        .addRoleOption(o => o.setName("role").setDescription("The role to configure").setRequired(true))
+        .addStringOption(o =>
+          o.setName("access").setDescription("Allow or deny access").setRequired(true)
+            .addChoices(
+              { name: "Allow", value: "allow" },
+              { name: "Deny", value: "deny" },
+              { name: "Reset", value: "reset" }
+            )
+        )
+    )
+    .addSubcommand(s => s.setName("viewperms").setDescription("View all configured command permissions")),
 
   async execute(interaction: ChatInputCommandInteraction, client: StellaClient) {
     if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageGuild], "settings")) return;
@@ -75,70 +66,33 @@ export default {
     const sub = interaction.options.getSubcommand();
 
     if (sub === "view") {
-      const settings = guildDb.get(interaction.guildId!);
+      const s = guildDb.get(interaction.guildId!);
 
-      return interaction.reply({
-        embeds: [
-          createEmbed({
-            title: `${EMOJIS.SETTINGS} Server Settings — ${interaction.guild?.name}`,
-            color: COLORS.PRIMARY,
-            thumbnail: interaction.guild?.iconURL({ size: 256 }) ?? undefined,
-            fields: [
-              {
-                name: "📋 Mod Log Channel",
-                value: settings.log_channel ? `<#${settings.log_channel}>` : "Not set",
-                inline: true,
-              },
-              {
-                name: `${EMOJIS.BELL} Welcome Channel`,
-                value: settings.welcome_channel ? `<#${settings.welcome_channel}>` : "Not set",
-                inline: true,
-              },
-              {
-                name: "💬 Welcome Message",
-                value: settings.welcome_message ?? "Default message",
-                inline: false,
-              },
-              {
-                name: `${EMOJIS.TICKET} Ticket Support Role`,
-                value: settings.ticket_support_role ? `<@&${settings.ticket_support_role}>` : "Not set",
-                inline: true,
-              },
-              {
-                name: `${EMOJIS.TICKET} Ticket Log Channel`,
-                value: settings.ticket_log_channel ? `<#${settings.ticket_log_channel}>` : "Not set",
-                inline: true,
-              },
-              {
-                name: `${EMOJIS.TICKET} Ticket Category`,
-                value: settings.ticket_category ? `<#${settings.ticket_category}>` : "Not set",
-                inline: true,
-              },
-              {
-                name: `${EMOJIS.TICKET} Total Tickets Created`,
-                value: `${settings.ticket_count}`,
-                inline: true,
-              },
-            ],
-          }),
+      return interaction.reply(infoReply({
+        title: interaction.guild?.name ?? "Server Settings",
+        thumbnail: interaction.guild?.iconURL({ size: 256 }),
+        rows: [
+          ["Prefix", `\`${s.prefix}\``],
+          ["Mod log channel", s.log_channel ? `<#${s.log_channel}>` : "Not set"],
+          ["Welcome channel", s.welcome_channel ? `<#${s.welcome_channel}>` : "Not set"],
+          ["Welcome message", s.welcome_message ?? "Default"],
+          ["Ticket support role", s.ticket_support_role ? `<@&${s.ticket_support_role}>` : "Not set"],
+          ["Ticket log channel", s.ticket_log_channel ? `<#${s.ticket_log_channel}>` : "Not set"],
+          ["Ticket category", s.ticket_category ? `<#${s.ticket_category}>` : "Not set"],
+          ["Total tickets", `${s.ticket_count}`],
         ],
-      });
+      }));
     }
 
     if (sub === "logs") {
       const channel = interaction.options.getChannel("channel");
-
       guildDb.update(interaction.guildId!, { log_channel: channel?.id ?? null });
 
-      if (!channel) {
-        return interaction.reply({
-          embeds: [successEmbed("Logs Disabled", "Moderation logging has been disabled.")],
-          ephemeral: true,
-        });
-      }
-
       return interaction.reply({
-        embeds: [successEmbed("Log Channel Set", `Moderation logs will now be sent to <#${channel.id}>.`)],
+        ...okReply(
+          channel ? "Log Channel Set" : "Logs Disabled",
+          channel ? `Mod logs → <#${channel.id}>` : "Moderation logging has been disabled."
+        ),
         ephemeral: true,
       });
     }
@@ -153,27 +107,29 @@ export default {
       });
 
       if (!channel) {
-        return interaction.reply({
-          embeds: [successEmbed("Welcome Disabled", "Welcome messages have been disabled.")],
-          ephemeral: true,
-        });
+        return interaction.reply({ ...okReply("Welcome Disabled", "Welcome messages have been turned off."), ephemeral: true });
       }
 
-      const preview = message
-        ? message.replace("{user}", `<@${interaction.user.id}>`).replace("{username}", interaction.user.username).replace("{server}", interaction.guild!.name).replace("{count}", `${interaction.guild!.memberCount}`)
-        : `Welcome to **${interaction.guild!.name}**, <@${interaction.user.id}>! ✨ You are member #${interaction.guild!.memberCount}.`;
+      const preview = (message ?? `Welcome to **{server}**, {user}! You are member #{count}.`)
+        .replace("{user}", `<@${interaction.user.id}>`)
+        .replace("{username}", interaction.user.username)
+        .replace("{server}", interaction.guild!.name)
+        .replace("{count}", `${interaction.guild!.memberCount}`);
 
       return interaction.reply({
-        embeds: [
-          createEmbed({
-            title: `${EMOJIS.CHECK} Welcome Settings Updated`,
-            color: COLORS.SUCCESS,
-            fields: [
-              { name: "Channel", value: `<#${channel.id}>` },
-              { name: "Message Preview", value: preview },
-            ],
-          }),
-        ],
+        ...okReply("Welcome Updated", `Channel: <#${channel.id}>\nPreview: ${preview}`),
+        ephemeral: true,
+      });
+    }
+
+    if (sub === "prefix") {
+      const newPrefix = interaction.options.getString("prefix", true);
+      if (newPrefix.length > 5) {
+        return interaction.reply({ ...errReply("Prefix must be 5 characters or less."), ephemeral: true });
+      }
+      guildDb.update(interaction.guildId!, { prefix: newPrefix });
+      return interaction.reply({
+        ...okReply("Prefix Updated", `New prefix: \`${newPrefix}\`\nExample: \`${newPrefix}help\``),
         ephemeral: true,
       });
     }
@@ -183,32 +139,25 @@ export default {
       const role = interaction.options.getRole("role", true);
       const access = interaction.options.getString("access", true);
 
-      const commandExists = client.commands.has(commandName);
-      if (!commandExists) {
-        return interaction.reply({
-          embeds: [errorEmbed(`Command \`/${commandName}\` does not exist.`)],
-          ephemeral: true,
-        });
+      if (!client.commands.has(commandName)) {
+        return interaction.reply({ ...errReply(`Command \`/${commandName}\` does not exist.`), ephemeral: true });
       }
 
       if (access === "reset") {
         permissionDb.remove(interaction.guildId!, commandName, role.id);
         return interaction.reply({
-          embeds: [successEmbed("Permission Reset", `Permissions for \`/${commandName}\` with <@&${role.id}> have been reset.`)],
+          ...okReply("Permission Reset", `Permissions for \`/${commandName}\` → <@&${role.id}> reset to default.`),
           ephemeral: true,
         });
       }
 
       permissionDb.set(interaction.guildId!, commandName, role.id, access === "allow");
 
-      const action = access === "allow" ? "✅ Allowed" : "❌ Denied";
       return interaction.reply({
-        embeds: [
-          successEmbed(
-            "Permission Updated",
-            `${action} <@&${role.id}> from using \`/${commandName}\`.`
-          ),
-        ],
+        ...okReply(
+          "Permission Updated",
+          `${access === "allow" ? "Allowed" : "Denied"} <@&${role.id}> from using \`/${commandName}\`.`
+        ),
         ephemeral: true,
       });
     }
@@ -217,15 +166,10 @@ export default {
       const perms = permissionDb.getAll(interaction.guildId!);
 
       if (perms.length === 0) {
-        return interaction.reply({
-          embeds: [
-            createEmbed({
-              title: `${EMOJIS.SHIELD} Command Permissions`,
-              description: "No custom permissions have been configured. All commands use their default Discord permissions.",
-              color: COLORS.INFO,
-            }),
-          ],
-        });
+        return interaction.reply(cardReply(
+          "## Command Permissions\nNo custom permissions configured.\nAll commands use their default Discord permissions.",
+          CLR.INFO
+        ));
       }
 
       const grouped = new Map<string, typeof perms>();
@@ -234,22 +178,11 @@ export default {
         grouped.get(perm.command_name)!.push(perm);
       }
 
-      const fields = [...grouped.entries()].map(([cmd, ps]) => ({
-        name: `\`/${cmd}\``,
-        value: ps.map(p => `${p.allowed ? "✅" : "❌"} <@&${p.role_id}>`).join("\n"),
-        inline: true,
-      }));
+      const lines = [...grouped.entries()]
+        .map(([cmd, ps]) => `**/${cmd}**\n${ps.map(p => `${p.allowed ? "✓" : "✗"} <@&${p.role_id}>`).join("\n")}`)
+        .join("\n\n");
 
-      return interaction.reply({
-        embeds: [
-          createEmbed({
-            title: `${EMOJIS.SHIELD} Command Permissions`,
-            description: `**${perms.length}** permission rule(s) configured`,
-            color: COLORS.PRIMARY,
-            fields,
-          }),
-        ],
-      });
+      return interaction.reply(cardReply(`## Command Permissions\n${lines}`, CLR.PRIMARY));
     }
   },
 };

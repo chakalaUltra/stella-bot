@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { modEmbed, errorEmbed, successEmbed } from "../../utils/embed.js";
+import { errReply, modReply } from "../../utils/ui.js";
 import { checkPermissions, checkBotPermissions } from "../../utils/permissions.js";
-import { EMOJIS } from "../../config.js";
 
 export default {
   category: "Moderation",
@@ -15,9 +14,7 @@ export default {
     .addIntegerOption(o =>
       o.setName("delete_days")
         .setDescription("Delete message history (days)")
-        .setMinValue(0)
-        .setMaxValue(7)
-        .setRequired(false)
+        .setMinValue(0).setMaxValue(7).setRequired(false)
     ),
 
   async execute(interaction: ChatInputCommandInteraction, _client: StellaClient) {
@@ -27,22 +24,14 @@ export default {
     const target = interaction.options.getUser("user", true);
     const reason = interaction.options.getString("reason") ?? "No reason provided";
     const deleteDays = interaction.options.getInteger("delete_days") ?? 0;
-
     const member = interaction.guild?.members.cache.get(target.id);
 
     if (member) {
       if (!member.bannable) {
-        return interaction.reply({
-          embeds: [errorEmbed("I cannot ban this user. They may have a higher role than me.")],
-          ephemeral: true,
-        });
+        return interaction.reply({ ...errReply("I cannot ban this user — they may have a higher role."), ephemeral: true });
       }
-
       if (member.id === interaction.user.id) {
-        return interaction.reply({
-          embeds: [errorEmbed("You cannot ban yourself.")],
-          ephemeral: true,
-        });
+        return interaction.reply({ ...errReply("You cannot ban yourself."), ephemeral: true });
       }
     }
 
@@ -50,9 +39,7 @@ export default {
 
     try {
       await target.send({
-        embeds: [
-          errorEmbed(`You have been **banned** from **${interaction.guild?.name}**.\n**Reason:** ${reason}`),
-        ],
+        ...errReply(`You were **banned** from **${interaction.guild?.name}**.\n**Reason:** ${reason}`),
       }).catch(() => null);
 
       await interaction.guild?.bans.create(target.id, {
@@ -60,20 +47,20 @@ export default {
         deleteMessageSeconds: deleteDays * 86400,
       });
 
-      await interaction.editReply({
-        embeds: [
-          modEmbed({
-            action: "Member Banned",
-            emoji: EMOJIS.BAN,
-            target: `${target.tag} (${target.id})`,
-            moderator: `<@${interaction.user.id}>`,
-            reason,
-            extra: deleteDays > 0 ? [{ name: "Messages Deleted", value: `${deleteDays} day(s)` }] : [],
-          }),
-        ],
-      });
+      const extra: [string, string][] = [];
+      if (deleteDays > 0) extra.push(["Messages deleted", `${deleteDays} day(s)`]);
+
+      await interaction.editReply(modReply({
+        action: "Banned",
+        targetTag: target.tag,
+        targetId: target.id,
+        targetAvatar: target.displayAvatarURL({ size: 128 }),
+        moderatorId: interaction.user.id,
+        reason,
+        extra,
+      }));
     } catch {
-      await interaction.editReply({ embeds: [errorEmbed("Failed to ban the user.")] });
+      await interaction.editReply(errReply("Failed to ban the user."));
     }
   },
 };

@@ -1,7 +1,6 @@
 import { GuildMember } from "discord.js";
-import { createEmbed } from "../../utils/embed.js";
+import { infoReply, CLR } from "../../utils/ui.js";
 import { warningDb } from "../../database/db.js";
-import { COLORS, EMOJIS } from "../../config.js";
 import type { PrefixCommand } from "../../types.js";
 
 export default {
@@ -21,22 +20,25 @@ export default {
       .sort((a, b) => b.position - a.position)
       .map(r => `<@&${r.id}>`)
       .slice(0, 8)
-      .join(", ") || "None";
+      .join(" ") || "None";
 
-    return message.reply({
-      embeds: [createEmbed({
-        title: `${EMOJIS.INFO} ${user.username}`,
-        color: target.displayHexColor !== "#000000" ? parseInt(target.displayHexColor.replace("#", ""), 16) : COLORS.PRIMARY,
-        thumbnail: user.displayAvatarURL({ size: 256 }),
-        fields: [
-          { name: "🆔 User ID", value: `\`${user.id}\``, inline: true },
-          { name: "🤖 Bot", value: user.bot ? "Yes" : "No", inline: true },
-          { name: "📅 Joined Discord", value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-          { name: "📅 Joined Server", value: target.joinedAt ? `<t:${Math.floor(target.joinedAt.getTime() / 1000)}:R>` : "Unknown", inline: true },
-          { name: `${EMOJIS.WARN} Warnings`, value: `${warnings}`, inline: true },
-          { name: "🏷️ Roles", value: roles },
-        ],
-      })],
-    });
+    const color = target.displayHexColor !== "#000000"
+      ? parseInt(target.displayHexColor.replace("#", ""), 16)
+      : CLR.PRIMARY;
+
+    return message.reply(infoReply({
+      title: user.username,
+      subtitle: target.nickname ? `aka ${target.nickname}` : null,
+      thumbnail: user.displayAvatarURL({ size: 256 }),
+      rows: [
+        ["User ID", `\`${user.id}\``],
+        ["Joined Discord", `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`],
+        ["Joined server", target.joinedAt ? `<t:${Math.floor(target.joinedAt.getTime() / 1000)}:R>` : "Unknown"],
+        ["Bot", user.bot ? "Yes" : "No"],
+        ["Warnings", `${warnings}`],
+        ["Roles", roles],
+      ],
+      color,
+    }));
   },
 } satisfies PrefixCommand;

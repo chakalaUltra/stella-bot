@@ -1,14 +1,7 @@
-import { createEmbed } from "../../utils/embed.js";
+import { cardReply, infoReply, CLR } from "../../utils/ui.js";
 import { guildDb } from "../../database/db.js";
-import { COLORS, EMOJIS, BOT_NAME, DEFAULT_PREFIX } from "../../config.js";
+import { BOT_NAME, DEFAULT_PREFIX } from "../../config.js";
 import type { PrefixCommand } from "../../types.js";
-
-const CATEGORY_EMOJIS: Record<string, string> = {
-  Moderation: "🛡️",
-  Utility: "🔧",
-  Fun: "🎉",
-  Settings: "⚙️",
-};
 
 export default {
   name: "help",
@@ -21,20 +14,18 @@ export default {
 
     if (args[0]) {
       const cmd = client.prefixCommands.get(args[0].toLowerCase());
-      if (!cmd) return message.reply({ embeds: [createEmbed({ title: "❌ Command Not Found", description: `No prefix command named \`${args[0]}\` exists.`, color: COLORS.ERROR })] });
+      if (!cmd) return message.reply(cardReply(`No prefix command named \`${args[0]}\` exists.`, CLR.ERROR));
 
-      return message.reply({
-        embeds: [createEmbed({
-          title: `${EMOJIS.INFO} ${prefix}${cmd.name}`,
-          color: COLORS.PRIMARY,
-          fields: [
-            { name: "📋 Description", value: cmd.description },
-            { name: "💡 Usage", value: `\`${cmd.usage.replace("s!", prefix)}\`` },
-            { name: "🏷️ Aliases", value: cmd.aliases?.map(a => `\`${prefix}${a}\``).join(", ") || "None", inline: true },
-            { name: "⏱️ Cooldown", value: `${cmd.cooldown ?? 3}s`, inline: true },
-          ],
-        })],
-      });
+      return message.reply(infoReply({
+        title: `${prefix}${cmd.name}`,
+        subtitle: cmd.description,
+        rows: [
+          ["Usage", `\`${cmd.usage.replace("s!", prefix)}\``],
+          ["Aliases", cmd.aliases?.map(a => `\`${prefix}${a}\``).join(", ") || "None"],
+          ["Cooldown", `${cmd.cooldown ?? 3}s`],
+          ["Category", cmd.category],
+        ],
+      }));
     }
 
     const categories = new Map<string, PrefixCommand[]>();
@@ -47,16 +38,13 @@ export default {
       categories.get(cmd.category)!.push(cmd);
     }
 
-    return message.reply({
-      embeds: [createEmbed({
-        title: `${EMOJIS.STAR} ${BOT_NAME} — Prefix Commands`,
-        description: `> Prefix: \`${prefix}\` • Use \`${prefix}help <command>\` for details`,
-        color: COLORS.PRIMARY,
-        fields: [...categories.entries()].map(([cat, cmds]) => ({
-          name: `${CATEGORY_EMOJIS[cat] ?? "📂"} ${cat}`,
-          value: cmds.map(c => `\`${prefix}${c.name}\``).join(" "),
-        })),
-      })],
-    });
+    const overview = [...categories.entries()]
+      .map(([cat, cmds]) => `**${cat}**\n${cmds.map(c => `\`${prefix}${c.name}\``).join(" ")}`)
+      .join("\n\n");
+
+    return message.reply(cardReply(
+      `## ${BOT_NAME} — Prefix Commands\n-# Prefix: \`${prefix}\` · Use \`${prefix}help <command>\` for details\n\n${overview}`,
+      CLR.PRIMARY
+    ));
   },
 } satisfies PrefixCommand;

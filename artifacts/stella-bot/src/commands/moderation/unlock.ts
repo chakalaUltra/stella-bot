@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, type ChatInputCommandInteraction, TextChannel } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { successEmbed } from "../../utils/embed.js";
+import { okReply } from "../../utils/ui.js";
 import { checkPermissions, checkBotPermissions } from "../../utils/permissions.js";
-import { EMOJIS } from "../../config.js";
 
 export default {
   category: "Moderation",
@@ -21,8 +20,6 @@ export default {
       SendMessages: null,
     }, { reason: `Unlocked by ${interaction.user.tag}` });
 
-    return interaction.reply({
-      embeds: [successEmbed(`${EMOJIS.UNLOCK} Channel Unlocked`, "This channel has been unlocked.")],
-    });
+    return interaction.reply(okReply("Channel Unlocked", `<#${channel.id}> is now open.`));
   },
 };

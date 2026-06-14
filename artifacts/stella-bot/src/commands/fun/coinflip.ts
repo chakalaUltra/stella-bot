@@ -1,7 +1,6 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS } from "../../config.js";
+import { cardReply, CLR } from "../../utils/ui.js";
 
 export default {
   category: "Fun",
@@ -12,16 +11,10 @@ export default {
 
   async execute(interaction: ChatInputCommandInteraction, _client: StellaClient) {
     const result = Math.random() < 0.5 ? "Heads" : "Tails";
-    const emoji = result === "Heads" ? "🪙" : "💿";
 
-    return interaction.reply({
-      embeds: [
-        createEmbed({
-          title: `${emoji} Coin Flip`,
-          description: `The coin landed on... **${result}**!`,
-          color: result === "Heads" ? COLORS.SUCCESS : COLORS.INFO,
-        }),
-      ],
-    });
+    return interaction.reply(cardReply(
+      `## Coin Flip\nThe coin landed on **${result}**.`,
+      result === "Heads" ? CLR.SUCCESS : CLR.INFO
+    ));
   },
 };

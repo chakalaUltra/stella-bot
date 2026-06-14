@@ -1,7 +1,10 @@
-import { SlashCommandBuilder, type ChatInputCommandInteraction, ButtonBuilder, ButtonStyle, ActionRowBuilder } from "discord.js";
+import {
+  SlashCommandBuilder, type ChatInputCommandInteraction,
+  ButtonBuilder, ButtonStyle, ActionRowBuilder,
+} from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS, EMOJIS } from "../../config.js";
+import { box, sect, CLR, type V2Reply } from "../../utils/ui.js";
+import { MessageFlags } from "discord.js";
 
 export default {
   category: "Utility",
@@ -12,33 +15,19 @@ export default {
 
   async execute(interaction: ChatInputCommandInteraction, _client: StellaClient) {
     const user = interaction.options.getUser("user") ?? interaction.user;
-
     const avatarUrl = user.displayAvatarURL({ size: 1024, extension: "png" });
     const gifUrl = user.displayAvatarURL({ size: 1024, extension: "gif" });
 
-    const pngBtn = new ButtonBuilder()
-      .setLabel("PNG")
-      .setStyle(ButtonStyle.Link)
-      .setURL(avatarUrl)
-      .setEmoji("🖼️");
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setLabel("PNG").setStyle(ButtonStyle.Link).setURL(avatarUrl),
+      new ButtonBuilder().setLabel("GIF").setStyle(ButtonStyle.Link).setURL(gifUrl),
+    );
 
-    const gifBtn = new ButtonBuilder()
-      .setLabel("GIF")
-      .setStyle(ButtonStyle.Link)
-      .setURL(gifUrl)
-      .setEmoji("🎞️");
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(pngBtn, gifBtn);
+    const container = box(CLR.PRIMARY, [sect(`## ${user.username}'s Avatar`, avatarUrl)]);
 
     return interaction.reply({
-      embeds: [
-        createEmbed({
-          title: `${EMOJIS.SPARKLE} ${user.username}'s Avatar`,
-          color: COLORS.PRIMARY,
-          image: avatarUrl,
-        }),
-      ],
-      components: [row],
-    });
+      components: [container, row],
+      flags: MessageFlags.IsComponentsV2,
+    } as V2Reply);
   },
 };

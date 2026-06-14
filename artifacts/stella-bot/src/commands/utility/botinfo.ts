@@ -1,52 +1,47 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed } from "../../utils/embed.js";
-import { COLORS, EMOJIS, BOT_NAME, BOT_VERSION } from "../../config.js";
+import { infoReply } from "../../utils/ui.js";
+import { BOT_NAME, BOT_VERSION } from "../../config.js";
 
 function formatUptime(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
   const d = Math.floor(h / 24);
-  return `${d}d ${h % 24}h ${m % 60}m ${s % 60}s`;
+  if (d > 0) return `${d}d ${h % 24}h ${m % 60}m`;
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m ${s % 60}s`;
 }
 
 function formatBytes(bytes: number): string {
-  const mb = bytes / 1024 / 1024;
-  return `${mb.toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export default {
   category: "Utility",
   data: new SlashCommandBuilder()
     .setName("botinfo")
-    .setDescription("Display information about Stella"),
+    .setDescription(`Display information about ${BOT_NAME}`),
 
   async execute(interaction: ChatInputCommandInteraction, client: StellaClient) {
     const mem = process.memoryUsage();
     const guilds = client.guilds.cache.size;
     const users = client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0);
-    const commands = client.commands.size;
 
-    return interaction.reply({
-      embeds: [
-        createEmbed({
-          title: `${EMOJIS.STAR} ${BOT_NAME} — Bot Information`,
-          color: COLORS.PRIMARY,
-          thumbnail: client.user?.displayAvatarURL({ size: 256 }),
-          fields: [
-            { name: "🤖 Version", value: `v${BOT_VERSION}`, inline: true },
-            { name: "📡 Ping", value: `${client.ws.ping}ms`, inline: true },
-            { name: "⏱️ Uptime", value: formatUptime(client.uptime ?? 0), inline: true },
-            { name: "🏠 Guilds", value: `${guilds}`, inline: true },
-            { name: "👥 Users", value: `${users.toLocaleString()}`, inline: true },
-            { name: "📋 Commands", value: `${commands}`, inline: true },
-            { name: "💾 Memory", value: formatBytes(mem.heapUsed), inline: true },
-            { name: "⚙️ Node.js", value: process.version, inline: true },
-            { name: "📦 discord.js", value: "v14", inline: true },
-          ],
-        }),
+    return interaction.reply(infoReply({
+      title: BOT_NAME,
+      subtitle: `Version ${BOT_VERSION}`,
+      thumbnail: client.user?.displayAvatarURL({ size: 256 }),
+      rows: [
+        ["Ping", `${client.ws.ping}ms`],
+        ["Uptime", formatUptime(client.uptime ?? 0)],
+        ["Guilds", `${guilds}`],
+        ["Users", users.toLocaleString()],
+        ["Commands", `${client.commands.size}`],
+        ["Memory", formatBytes(mem.heapUsed)],
+        ["Node.js", process.version],
+        ["discord.js", "v14"],
       ],
-    });
+    }));
   },
 };

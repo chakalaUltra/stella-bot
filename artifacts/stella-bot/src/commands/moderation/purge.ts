@@ -1,11 +1,6 @@
-import {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  type ChatInputCommandInteraction,
-  TextChannel,
-} from "discord.js";
+import { SlashCommandBuilder, PermissionFlagsBits, type ChatInputCommandInteraction, TextChannel } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { successEmbed, errorEmbed } from "../../utils/embed.js";
+import { errReply, okReply } from "../../utils/ui.js";
 import { checkPermissions, checkBotPermissions } from "../../utils/permissions.js";
 
 export default {
@@ -15,7 +10,7 @@ export default {
     .setDescription("Delete multiple messages at once")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption(o =>
-      o.setName("amount").setDescription("Number of messages to delete (1-100)").setRequired(true).setMinValue(1).setMaxValue(100)
+      o.setName("amount").setDescription("Number of messages to delete (1–100)").setRequired(true).setMinValue(1).setMaxValue(100)
     )
     .addUserOption(o => o.setName("user").setDescription("Only delete messages from this user").setRequired(false)),
 
@@ -37,18 +32,14 @@ export default {
     toDelete = toDelete.slice(0, amount);
 
     if (toDelete.length === 0) {
-      return interaction.editReply({ embeds: [errorEmbed("No messages to delete. Messages older than 14 days cannot be bulk deleted.")] });
+      return interaction.editReply(errReply("No messages to delete. Messages older than 14 days cannot be bulk deleted."));
     }
 
     const deleted = await channel.bulkDelete(toDelete, true);
 
-    await interaction.editReply({
-      embeds: [
-        successEmbed(
-          "Messages Purged",
-          `Successfully deleted **${deleted.size}** message(s)${targetUser ? ` from ${targetUser.tag}` : ""}.`
-        ),
-      ],
-    });
+    await interaction.editReply(okReply(
+      "Purged",
+      `Deleted **${deleted.size}** message(s)${targetUser ? ` from **${targetUser.tag}**` : ""}.`
+    ));
   },
 };

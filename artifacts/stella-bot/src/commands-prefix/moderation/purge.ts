@@ -1,5 +1,5 @@
 import { PermissionFlagsBits, TextChannel } from "discord.js";
-import { successEmbed, errorEmbed } from "../../utils/embed.js";
+import { okReply, errReply } from "../../utils/ui.js";
 import type { PrefixCommand } from "../../types.js";
 
 export default {
@@ -10,12 +10,12 @@ export default {
   category: "Moderation",
   async execute(message, args) {
     if (!message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return message.reply({ embeds: [errorEmbed("You need **Manage Messages** permission.")] });
+      return message.reply({ ...errReply("You need **Manage Messages** permission.") });
     }
 
     const amount = parseInt(args[0] ?? "");
     if (isNaN(amount) || amount < 1 || amount > 100) {
-      return message.reply({ embeds: [errorEmbed("Please provide a number between 1 and 100.")] });
+      return message.reply({ ...errReply("Please provide a number between 1 and 100.") });
     }
 
     const targetUser = message.mentions.users.first();
@@ -28,15 +28,11 @@ export default {
     if (targetUser) toDelete = toDelete.filter(m => m.author.id === targetUser.id);
     toDelete = toDelete.slice(0, amount);
 
-    if (toDelete.length === 0) {
-      return channel.send({ embeds: [errorEmbed("No messages to delete.")] });
-    }
+    if (toDelete.length === 0) return channel.send({ ...errReply("No messages to delete.") });
 
     const deleted = await channel.bulkDelete(toDelete, true);
-    const reply = await channel.send({
-      embeds: [successEmbed("Messages Purged", `Deleted **${deleted.size}** message(s)${targetUser ? ` from ${targetUser.tag}` : ""}.`)],
-    });
+    const reply = await channel.send(okReply("Purged", `Deleted **${deleted.size}** message(s)${targetUser ? ` from **${targetUser.tag}**` : ""}.`));
 
-    setTimeout(() => reply.delete().catch(() => null), 4000);
+    setTimeout(() => reply.delete().catch(() => null), 5000);
   },
 } satisfies PrefixCommand;

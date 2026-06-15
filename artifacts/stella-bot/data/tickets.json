@@ -9,5 +9,27 @@
     "topic": null,
     "created_at": 1781472293,
     "closed_at": 1781472306
+  },
+  {
+    "id": 2,
+    "guild_id": "1330685351131480164",
+    "channel_id": "1515836455950221475",
+    "user_id": "1117540437016727612",
+    "ticket_number": 2,
+    "status": "closed",
+    "topic": null,
+    "created_at": 1781473974,
+    "closed_at": 1781473983
+  },
+  {
+    "id": 3,
+    "guild_id": "1330685351131480164",
+    "channel_id": "1515839946164801698",
+    "user_id": "877122546695307315",
+    "ticket_number": 3,
+    "status": "closed",
+    "topic": null,
+    "created_at": 1781474806,
+    "closed_at": 1781474810
   }
 ]

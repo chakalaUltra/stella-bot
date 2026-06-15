@@ -3,6 +3,7 @@ import type { StellaClient } from "../../client.js";
 import { errReply, modReply, CLR } from "../../utils/ui.js";
 import { checkPermissions } from "../../utils/permissions.js";
 import { warningDb } from "../../database/db.js";
+import { sendModLog } from "../../utils/modlog.js";
 
 export default {
   category: "Moderation",
@@ -27,19 +28,23 @@ export default {
     warningDb.add(interaction.guildId!, target.id, interaction.user.id, reason);
     const total = warningDb.count(interaction.guildId!, target.id);
 
-    await target.send({
-      ...errReply(`You received a warning in **${interaction.guild?.name}**.\n**Reason:** ${reason}\n**Total warnings:** ${total}`),
-    }).catch(() => null);
+    await target.send({ ...errReply(`You received a warning in **${interaction.guild?.name}**.\n**Reason:** ${reason}\n**Total warnings:** ${total}`) }).catch(() => null);
+
+    const extra: [string, string][] = [["Total warnings", `${total}`]];
 
     await interaction.editReply(modReply({
-      action: "Warned",
-      targetTag: target.tag,
-      targetId: target.id,
+      action: "Warned", targetTag: target.tag, targetId: target.id,
       targetAvatar: target.displayAvatarURL({ size: 128 }),
-      moderatorId: interaction.user.id,
-      reason,
-      extra: [["Total warnings", `${total}`]],
-      color: CLR.WARNING,
+      moderatorId: interaction.user.id, reason, extra, color: CLR.WARNING,
     }));
+
+    if (interaction.guild) {
+      await sendModLog(interaction.guild, {
+        action: "Warned", color: CLR.WARNING,
+        targetTag: target.tag, targetId: target.id,
+        targetAvatar: target.displayAvatarURL({ size: 128 }),
+        moderatorId: interaction.user.id, reason, extra,
+      });
+    }
   },
 };

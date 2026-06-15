@@ -31,5 +31,16 @@
     "topic": null,
     "created_at": 1781474806,
     "closed_at": 1781474810
+  },
+  {
+    "id": 4,
+    "guild_id": "1330685351131480164",
+    "channel_id": "1516006697121091745",
+    "user_id": "1117540437016727612",
+    "ticket_number": 4,
+    "status": "open",
+    "topic": null,
+    "created_at": 1781514562,
+    "closed_at": null
   }
 ]

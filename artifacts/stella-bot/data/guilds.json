@@ -1,13 +1,13 @@
 {
   "1330685351131480164": {
     "guild_id": "1330685351131480164",
-    "log_channel": "1501171193774870630",
+    "log_channel": "1403306130758963264",
     "welcome_channel": null,
     "welcome_message": null,
     "ticket_category": "1501175706544115792",
-    "ticket_log_channel": "1501171193774870630",
-    "ticket_support_role": "1500869741458227382",
-    "ticket_count": 3,
+    "ticket_log_channel": "1403306130758963264",
+    "ticket_support_role": "1501178408934309898",
+    "ticket_count": 4,
     "created_at": 1781472292
   }
 }

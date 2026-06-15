@@ -13,6 +13,7 @@ import type { StellaClient } from "../../client.js";
 import { box, td, divider, errReply, okReply, infoReply, CLR, type V2Reply } from "../../utils/ui.js";
 import { checkPermissions } from "../../utils/permissions.js";
 import { guildDb, ticketDb } from "../../database/db.js";
+import { buildTranscript } from "../../utils/transcript.js";
 import { TICKET_PREFIX } from "../../config.js";
 
 export default {
@@ -96,35 +97,53 @@ export default {
 
       const reason = interaction.options.getString("reason") ?? "No reason provided";
       const settings = guildDb.get(interaction.guildId!);
+      const channel = interaction.channel as TextChannel;
+      const ticketId = String(ticket.ticket_number).padStart(4, "0");
 
-      ticketDb.close(interaction.channelId);
+      await interaction.deferReply();
+      ticketDb.close(channel.id);
 
-      await interaction.reply({
-        components: [
-          box(CLR.WARNING, [
-            td(`## Ticket Closing\nClosed by <@${interaction.user.id}>\n**Reason:** ${reason}\n\n-# Channel will be deleted in 5 seconds.`),
-          ]),
-        ],
-        flags: MessageFlags.IsComponentsV2,
-      } as V2Reply);
+      // Build transcript
+      const creator = await interaction.client.users.fetch(ticket.user_id).catch(() => null);
+      const creatorTag = creator?.tag ?? `Unknown (${ticket.user_id})`;
+      const transcript = await buildTranscript(channel, ticketId, creatorTag, interaction.user.tag);
 
+      // DM transcript to ticket creator
+      if (creator) {
+        await creator.send({
+          ...okReply(`Ticket #${ticketId} Closed`, `Your ticket in **${interaction.guild?.name}** has been closed.\n**Closed by:** ${interaction.user.tag}\n**Reason:** ${reason}`),
+          files: [transcript],
+        }).catch(() => null);
+      }
+
+      // Log to ticket log channel
       if (settings.ticket_log_channel) {
         const logCh = interaction.guild?.channels.cache.get(settings.ticket_log_channel) as TextChannel | undefined;
         if (logCh) {
           await logCh.send({
             components: [
               box(CLR.WARNING, [
-                td(`## Ticket Closed\nTicket #${String(ticket.ticket_number).padStart(4, "0")} closed`),
+                td(`## Ticket Closed · #${ticketId}`),
                 divider(),
                 td(`**User** · <@${ticket.user_id}>\n**Closed by** · <@${interaction.user.id}>\n**Reason** · ${reason}`),
               ]),
             ],
             flags: MessageFlags.IsComponentsV2,
-          } as V2Reply);
+            files: [transcript],
+          } as unknown as import("discord.js").MessageCreateOptions);
         }
       }
 
-      setTimeout(() => interaction.channel?.delete().catch(() => null), 5000);
+      await interaction.editReply({
+        components: [
+          box(CLR.WARNING, [
+            td(`## Ticket Closing\nClosed by <@${interaction.user.id}>\n**Reason:** ${reason}\n-# Transcript sent. Channel will be deleted in 5 seconds.`),
+          ]),
+        ],
+        flags: MessageFlags.IsComponentsV2,
+      } as V2Reply);
+
+      setTimeout(() => channel.delete().catch(() => null), 5000);
       return;
     }
 
@@ -151,9 +170,7 @@ export default {
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageChannels], "ticket")) return;
 
       const user = interaction.options.getUser("user", true);
-      if (user.id === ticket.user_id) {
-        return interaction.reply({ ...errReply("You cannot remove the ticket creator."), ephemeral: true });
-      }
+      if (user.id === ticket.user_id) return interaction.reply({ ...errReply("You cannot remove the ticket creator."), ephemeral: true });
 
       await (interaction.channel as TextChannel).permissionOverwrites.delete(user.id);
       return interaction.reply(okReply("User Removed", `<@${user.id}> has been removed from this ticket.`));

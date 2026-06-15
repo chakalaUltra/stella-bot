@@ -15,6 +15,7 @@ import {
 import type { StellaClient } from "../client.js";
 import { box, td, divider, sect, errReply, okReply, CLR, type V2Reply } from "../utils/ui.js";
 import { guildDb, ticketDb } from "../database/db.js";
+import { buildTranscript } from "../utils/transcript.js";
 import { TICKET_PREFIX } from "../config.js";
 
 export default {
@@ -74,6 +75,55 @@ export default {
   },
 };
 
+// ── Ticket close helper ──────────────────────────────────────────────────────
+
+async function closeTicket(
+  channel: TextChannel,
+  guild: import("discord.js").Guild,
+  closedById: string,
+  closedByTag: string,
+): Promise<void> {
+  const ticket = ticketDb.getByChannel(channel.id);
+  if (!ticket) return;
+
+  ticketDb.close(channel.id);
+  const settings = guildDb.get(guild.id);
+  const ticketId = String(ticket.ticket_number).padStart(4, "0");
+
+  // Fetch ticket creator info for transcript
+  const creator = await guild.client.users.fetch(ticket.user_id).catch(() => null);
+  const creatorTag = creator?.tag ?? `Unknown (${ticket.user_id})`;
+
+  // Build transcript
+  const transcript = await buildTranscript(channel, ticketId, creatorTag, closedByTag);
+
+  // DM the transcript to the ticket creator
+  if (creator) {
+    await creator.send({
+      ...okReply(`Ticket #${ticketId} Closed`, `Your ticket in **${guild.name}** has been closed.\n**Closed by:** ${closedByTag}`),
+      files: [transcript],
+    }).catch(() => null);
+  }
+
+  // Send to ticket log channel with transcript attached
+  if (settings.ticket_log_channel) {
+    const logChannel = guild.channels.cache.get(settings.ticket_log_channel) as TextChannel | undefined;
+    if (logChannel) {
+      await logChannel.send({
+        components: [
+          box(CLR.WARNING, [
+            td(`## Ticket Closed · #${ticketId}`),
+            divider(),
+            td(`**User** · <@${ticket.user_id}>\n**Closed by** · <@${closedById}>\n**Channel** · #${channel.name}`),
+          ]),
+        ],
+        flags: MessageFlags.IsComponentsV2,
+        files: [transcript],
+      } as unknown as import("discord.js").MessageCreateOptions).catch(() => null);
+    }
+  }
+}
+
 // ── Button handler ───────────────────────────────────────────────────────────
 
 async function handleButton(interaction: ButtonInteraction, _client: StellaClient) {
@@ -96,19 +146,15 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
     const ticketId = String(ticketNumber).padStart(4, "0");
     const channelName = `${TICKET_PREFIX}${ticketId}`;
 
-    const category = settings.ticket_category
-      ? guild.channels.cache.get(settings.ticket_category)
-      : null;
+    const category = settings.ticket_category ? guild.channels.cache.get(settings.ticket_category) : null;
 
     const overwrites = [
       { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: interaction.user.id,
         allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.AttachFiles,
-          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks,
         ],
       },
     ];
@@ -117,10 +163,8 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
       overwrites.push({
         id: settings.ticket_support_role,
         allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.AttachFiles,
-          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks,
           PermissionFlagsBits.ManageMessages,
         ],
       });
@@ -143,10 +187,15 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(closeBtn);
 
+    // Mention inside TextDisplay — triggers ping without the forbidden 'content' field
+    const mentionLine = settings.ticket_support_role
+      ? `<@${interaction.user.id}> <@&${settings.ticket_support_role}>`
+      : `<@${interaction.user.id}>`;
+
     await ticketChannel.send({
-      content: `<@${interaction.user.id}>${settings.ticket_support_role ? ` <@&${settings.ticket_support_role}>` : ""}`,
       components: [
         box(CLR.PRIMARY, [
+          td(mentionLine),
           sect(
             `## Ticket #${ticketId}\n-# Opened by ${interaction.user.username}`,
             interaction.user.displayAvatarURL({ size: 128 })
@@ -165,13 +214,13 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
         await logChannel.send({
           components: [
             box(CLR.SUCCESS, [
-              td(`## Ticket Opened\nTicket #${ticketId} opened by <@${interaction.user.id}>`),
+              td(`## Ticket Opened · #${ticketId}`),
               divider(),
-              td(`**Channel** · <#${ticketChannel.id}>`),
+              td(`**User** · <@${interaction.user.id}>\n**Channel** · <#${ticketChannel.id}>`),
             ]),
           ],
           flags: MessageFlags.IsComponentsV2,
-        } as V2Reply);
+        } as unknown as import("discord.js").MessageCreateOptions);
       }
     }
 
@@ -181,7 +230,7 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
     });
   }
 
-  // ─ Close ticket button (first click — confirm dialog) ─────────────────────
+  // ─ Close ticket (confirm dialog) ──────────────────────────────────────────
   if (customId === "close_ticket") {
     const ticket = ticketDb.getByChannel(interaction.channel!.id);
     if (!ticket) return interaction.reply({ ...errReply("This channel is not a ticket."), ephemeral: true });
@@ -200,7 +249,7 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
 
     return interaction.reply({
       components: [
-        box(CLR.WARNING, [td("## Close Ticket?\nThis action cannot be undone.")]),
+        box(CLR.WARNING, [td("## Close Ticket?\nThis action cannot be undone. A transcript will be sent to the ticket creator.")]),
         row,
       ],
       flags: MessageFlags.IsComponentsV2,
@@ -213,35 +262,19 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
     const ticket = ticketDb.getByChannel(interaction.channel!.id);
     if (!ticket) return interaction.reply({ ...errReply("No ticket found for this channel."), ephemeral: true });
 
-    ticketDb.close(interaction.channel!.id);
-    const settings = guildDb.get(guild.id);
-
     await interaction.update({
       components: [
         box(CLR.WARNING, [
-          td(`## Ticket Closing\nClosed by <@${interaction.user.id}>\n-# Channel will be deleted in 5 seconds.`),
+          td(`## Ticket Closing\nClosed by <@${interaction.user.id}>\n-# Generating transcript and deleting channel in 5 seconds…`),
         ]),
       ],
       flags: MessageFlags.IsComponentsV2,
     } as V2Reply);
 
-    if (settings.ticket_log_channel) {
-      const logChannel = guild.channels.cache.get(settings.ticket_log_channel) as TextChannel | undefined;
-      if (logChannel) {
-        await logChannel.send({
-          components: [
-            box(CLR.WARNING, [
-              td(`## Ticket Closed\nTicket #${String(ticket.ticket_number).padStart(4, "0")}`),
-              divider(),
-              td(`**User** · <@${ticket.user_id}>\n**Closed by** · <@${interaction.user.id}>`),
-            ]),
-          ],
-          flags: MessageFlags.IsComponentsV2,
-        } as V2Reply);
-      }
-    }
+    const channel = interaction.channel as TextChannel;
+    await closeTicket(channel, guild, interaction.user.id, interaction.user.tag);
 
-    setTimeout(() => interaction.channel?.delete().catch(() => null), 5000);
+    setTimeout(() => channel.delete().catch(() => null), 5000);
     return;
   }
 

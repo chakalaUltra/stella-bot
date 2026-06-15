@@ -38,9 +38,20 @@
     "channel_id": "1516006697121091745",
     "user_id": "1117540437016727612",
     "ticket_number": 4,
-    "status": "open",
+    "status": "closed",
     "topic": null,
     "created_at": 1781514562,
-    "closed_at": null
+    "closed_at": 1781515003
+  },
+  {
+    "id": 5,
+    "guild_id": "1330685351131480164",
+    "channel_id": "1516008693332967657",
+    "user_id": "1117540437016727612",
+    "ticket_number": 5,
+    "status": "closed",
+    "topic": null,
+    "created_at": 1781515038,
+    "closed_at": 1781515070
   }
 ]

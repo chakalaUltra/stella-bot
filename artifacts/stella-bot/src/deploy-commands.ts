@@ -8,7 +8,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const token = process.env["DISCORD_TOKEN"];
 const clientId = process.env["DISCORD_CLIENT_ID"];
-const guildId = process.env["DISCORD_GUILD_ID"];
 
 if (!token || !clientId) {
   console.error("DISCORD_TOKEN and DISCORD_CLIENT_ID are required.");

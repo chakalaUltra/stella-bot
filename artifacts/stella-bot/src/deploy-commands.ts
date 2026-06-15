@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const token = process.env["DISCORD_TOKEN"];
 const clientId = process.env["DISCORD_CLIENT_ID"];
+const guildId = process.env["DISCORD_GUILD_ID"];
 
 if (!token || !clientId) {
   console.error("DISCORD_TOKEN and DISCORD_CLIENT_ID are required.");
@@ -36,9 +37,15 @@ for (const category of categories) {
 const rest = new REST().setToken(token);
 
 try {
-  console.log(`📡 Deploying ${commands.length} slash command(s) globally...`);
-  await rest.put(Routes.applicationCommands(clientId), { body: commands });
-  console.log("✅ Successfully deployed globally (may take up to 1 hour to appear)");
+  console.log(`📡 Deploying ${commands.length} slash command(s)...`);
+
+  if (guildId) {
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+    console.log(`✅ Successfully deployed to guild ${guildId} (instant)`);
+  } else {
+    await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    console.log("✅ Successfully deployed globally (may take up to 1 hour)");
+  }
 } catch (error) {
   console.error("❌ Failed to deploy commands:", error);
 }

@@ -9,17 +9,5 @@
     "ticket_support_role": "1501178408934309898",
     "ticket_count": 5,
     "created_at": 1781472292
-  },
-  "1449032440218652736": {
-    "guild_id": "1449032440218652736",
-    "prefix": "s!",
-    "log_channel": null,
-    "welcome_channel": null,
-    "welcome_message": null,
-    "ticket_category": null,
-    "ticket_log_channel": null,
-    "ticket_support_role": null,
-    "ticket_count": 0,
-    "created_at": 1781560195
   }
 }

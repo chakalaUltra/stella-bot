@@ -17,6 +17,7 @@ import { box, td, divider, sect, errReply, okReply, CLR, type V2Reply } from "..
 import { guildDb, ticketDb } from "../database/db.js";
 import { buildTranscript } from "../utils/transcript.js";
 import { TICKET_PREFIX } from "../config.js";
+import { activeGames, spin, calcResult, buildGameMessage } from "../games/slots.js";
 
 export default {
   name: "interactionCreate",
@@ -285,10 +286,50 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
       flags: MessageFlags.IsComponentsV2,
     } as V2Reply);
   }
+
+  // ── Slots — roll ──────────────────────────────────────────────────────────
+  if (customId === "slots_roll") {
+    const game = activeGames.get(interaction.user.id);
+    if (!game || game.ended) return;
+
+    if (game.balance < game.bet) {
+      return interaction.update(buildGameMessage(game, null, "⚠️ Not enough SC! Lower your bet or end the game."));
+    }
+
+    const reels = spin();
+    const { payout, label } = calcResult(reels, game.bet);
+
+    game.balance = game.balance - game.bet + payout;
+    if (game.balance < 0) game.balance = 0;
+
+    if (game.balance === 0) game.ended = true;
+
+    return interaction.update(buildGameMessage(game, reels, label));
+  }
+
+  // ── Slots — end ───────────────────────────────────────────────────────────
+  if (customId === "slots_end") {
+    const game = activeGames.get(interaction.user.id);
+    if (!game) return;
+
+    game.ended = true;
+    activeGames.delete(interaction.user.id);
+
+    return interaction.update(buildGameMessage(game, null, null));
+  }
 }
 
-async function handleSelectMenu(_interaction: StringSelectMenuInteraction, _client: StellaClient) {
-  // Future use
+async function handleSelectMenu(interaction: StringSelectMenuInteraction, _client: StellaClient) {
+  // ── Slots — bet selector ──────────────────────────────────────────────────
+  if (interaction.customId === "slots_bet") {
+    const game = activeGames.get(interaction.user.id);
+    if (!game) return interaction.update({ components: [], flags: MessageFlags.IsComponentsV2 } as V2Reply);
+
+    const newBet = parseInt(interaction.values[0]!, 10);
+    game.bet = newBet;
+
+    return interaction.update(buildGameMessage(game, null, null));
+  }
 }
 
 async function handleModal(_interaction: ModalSubmitInteraction, _client: StellaClient) {

@@ -6,14 +6,14 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
-  EmbedBuilder,
   TextChannel,
+  MessageFlags,
 } from "discord.js";
 import type { StellaClient } from "../../client.js";
-import { createEmbed, successEmbed, errorEmbed } from "../../utils/embed.js";
+import { box, td, divider, errReply, okReply, infoReply, CLR, type V2Reply } from "../../utils/ui.js";
 import { checkPermissions } from "../../utils/permissions.js";
 import { guildDb, ticketDb } from "../../database/db.js";
-import { COLORS, EMOJIS, BOT_FOOTER, TICKET_PREFIX } from "../../config.js";
+import { TICKET_PREFIX } from "../../config.js";
 
 export default {
   category: "Tickets",
@@ -24,10 +24,7 @@ export default {
       s.setName("setup")
         .setDescription("Send the ticket panel to a channel")
         .addChannelOption(o =>
-          o.setName("channel")
-            .setDescription("Channel to send the panel")
-            .addChannelTypes(ChannelType.GuildText)
-            .setRequired(true)
+          o.setName("channel").setDescription("Channel to send the panel").addChannelTypes(ChannelType.GuildText).setRequired(true)
         )
     )
     .addSubcommand(s =>
@@ -50,16 +47,10 @@ export default {
         .setDescription("Configure the ticket system")
         .addRoleOption(o => o.setName("support_role").setDescription("Role that can see all tickets").setRequired(false))
         .addChannelOption(o =>
-          o.setName("log_channel")
-            .setDescription("Channel for ticket logs")
-            .addChannelTypes(ChannelType.GuildText)
-            .setRequired(false)
+          o.setName("log_channel").setDescription("Channel for ticket logs").addChannelTypes(ChannelType.GuildText).setRequired(false)
         )
         .addChannelOption(o =>
-          o.setName("category")
-            .setDescription("Category for ticket channels")
-            .addChannelTypes(ChannelType.GuildCategory)
-            .setRequired(false)
+          o.setName("category").setDescription("Category for ticket channels").addChannelTypes(ChannelType.GuildCategory).setRequired(false)
         )
     )
     .addSubcommand(s =>
@@ -71,41 +62,37 @@ export default {
   async execute(interaction: ChatInputCommandInteraction, _client: StellaClient) {
     const sub = interaction.options.getSubcommand();
 
+    // ── setup ───────────────────────────────────────────────────────────────
     if (sub === "setup") {
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageGuild], "ticket")) return;
-
       const channel = interaction.options.getChannel("channel", true) as TextChannel;
-
-      const embed = new EmbedBuilder()
-        .setColor(COLORS.PRIMARY)
-        .setTitle(`${EMOJIS.TICKET} Support Tickets`)
-        .setDescription(
-          `> Need help? We're here for you!\n\nClick the button below to open a support ticket and our team will assist you as soon as possible.\n\n**📋 Before opening a ticket:**\n• Be specific about your issue\n• Include any relevant screenshots\n• Be patient and respectful`
-        )
-        .setFooter({ text: BOT_FOOTER })
-        .setTimestamp();
 
       const openBtn = new ButtonBuilder()
         .setCustomId("create_ticket")
         .setLabel("Open a Ticket")
-        .setEmoji("🎫")
         .setStyle(ButtonStyle.Primary);
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(openBtn);
 
-      await channel.send({ embeds: [embed], components: [row] });
+      await channel.send({
+        components: [
+          box(CLR.PRIMARY, [
+            td("## Support Tickets\nNeed help? Our team is here to assist you."),
+            divider(),
+            td("**Before opening a ticket:**\n· Describe your issue clearly\n· Attach any relevant screenshots\n· Be patient and respectful"),
+          ]),
+          row,
+        ],
+        flags: MessageFlags.IsComponentsV2,
+      } as V2Reply);
 
-      return interaction.reply({
-        embeds: [successEmbed("Ticket Panel Created", `The ticket panel has been sent to <#${channel.id}>.`)],
-        ephemeral: true,
-      });
+      return interaction.reply({ ...okReply("Panel Created", `Ticket panel sent to <#${channel.id}>.`), ephemeral: true });
     }
 
+    // ── close ───────────────────────────────────────────────────────────────
     if (sub === "close") {
       const ticket = ticketDb.getByChannel(interaction.channelId);
-      if (!ticket) {
-        return interaction.reply({ embeds: [errorEmbed("This channel is not a ticket.")], ephemeral: true });
-      }
+      if (!ticket) return interaction.reply({ ...errReply("This channel is not a ticket."), ephemeral: true });
 
       const reason = interaction.options.getString("reason") ?? "No reason provided";
       const settings = guildDb.get(interaction.guildId!);
@@ -113,85 +100,66 @@ export default {
       ticketDb.close(interaction.channelId);
 
       await interaction.reply({
-        embeds: [
-          createEmbed({
-            title: `${EMOJIS.LOCK} Ticket Closing`,
-            description: `Ticket closed by <@${interaction.user.id}>.\n**Reason:** ${reason}\n\nChannel will be deleted in **5 seconds**.`,
-            color: COLORS.PRIMARY,
-          }),
+        components: [
+          box(CLR.WARNING, [
+            td(`## Ticket Closing\nClosed by <@${interaction.user.id}>\n**Reason:** ${reason}\n\n-# Channel will be deleted in 5 seconds.`),
+          ]),
         ],
-      });
+        flags: MessageFlags.IsComponentsV2,
+      } as V2Reply);
 
       if (settings.ticket_log_channel) {
         const logCh = interaction.guild?.channels.cache.get(settings.ticket_log_channel) as TextChannel | undefined;
         if (logCh) {
           await logCh.send({
-            embeds: [
-              createEmbed({
-                title: `${EMOJIS.LOCK} Ticket Closed`,
-                description: `Ticket #${ticket.ticket_number} closed.`,
-                color: COLORS.WARNING,
-                fields: [
-                  { name: "User", value: `<@${ticket.user_id}>`, inline: true },
-                  { name: "Closed by", value: `<@${interaction.user.id}>`, inline: true },
-                  { name: "Reason", value: reason },
-                ],
-              }),
+            components: [
+              box(CLR.WARNING, [
+                td(`## Ticket Closed\nTicket #${String(ticket.ticket_number).padStart(4, "0")} closed`),
+                divider(),
+                td(`**User** · <@${ticket.user_id}>\n**Closed by** · <@${interaction.user.id}>\n**Reason** · ${reason}`),
+              ]),
             ],
-          });
+            flags: MessageFlags.IsComponentsV2,
+          } as V2Reply);
         }
       }
 
-      setTimeout(async () => {
-        await interaction.channel?.delete().catch(() => null);
-      }, 5000);
+      setTimeout(() => interaction.channel?.delete().catch(() => null), 5000);
+      return;
     }
 
+    // ── add ─────────────────────────────────────────────────────────────────
     if (sub === "add") {
       const ticket = ticketDb.getByChannel(interaction.channelId);
-      if (!ticket) {
-        return interaction.reply({ embeds: [errorEmbed("This channel is not a ticket.")], ephemeral: true });
-      }
-
+      if (!ticket) return interaction.reply({ ...errReply("This channel is not a ticket."), ephemeral: true });
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageChannels], "ticket")) return;
 
       const user = interaction.options.getUser("user", true);
       const channel = interaction.channel as TextChannel;
 
       await channel.permissionOverwrites.edit(user.id, {
-        ViewChannel: true,
-        SendMessages: true,
-        AttachFiles: true,
-        EmbedLinks: true,
+        ViewChannel: true, SendMessages: true, AttachFiles: true, EmbedLinks: true,
       });
 
-      return interaction.reply({
-        embeds: [successEmbed("User Added", `<@${user.id}> has been added to this ticket.`)],
-      });
+      return interaction.reply(okReply("User Added", `<@${user.id}> has been added to this ticket.`));
     }
 
+    // ── remove ──────────────────────────────────────────────────────────────
     if (sub === "remove") {
       const ticket = ticketDb.getByChannel(interaction.channelId);
-      if (!ticket) {
-        return interaction.reply({ embeds: [errorEmbed("This channel is not a ticket.")], ephemeral: true });
-      }
-
+      if (!ticket) return interaction.reply({ ...errReply("This channel is not a ticket."), ephemeral: true });
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageChannels], "ticket")) return;
 
       const user = interaction.options.getUser("user", true);
-
       if (user.id === ticket.user_id) {
-        return interaction.reply({ embeds: [errorEmbed("You cannot remove the ticket creator.")], ephemeral: true });
+        return interaction.reply({ ...errReply("You cannot remove the ticket creator."), ephemeral: true });
       }
 
-      const channel = interaction.channel as TextChannel;
-      await channel.permissionOverwrites.delete(user.id);
-
-      return interaction.reply({
-        embeds: [successEmbed("User Removed", `<@${user.id}> has been removed from this ticket.`)],
-      });
+      await (interaction.channel as TextChannel).permissionOverwrites.delete(user.id);
+      return interaction.reply(okReply("User Removed", `<@${user.id}> has been removed from this ticket.`));
     }
 
+    // ── settings ────────────────────────────────────────────────────────────
     if (sub === "settings") {
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageGuild], "ticket")) return;
 
@@ -205,44 +173,32 @@ export default {
       if (category) updates.ticket_category = category.id;
 
       if (Object.keys(updates).length === 0) {
-        const settings = guildDb.get(interaction.guildId!);
-        return interaction.reply({
-          embeds: [
-            createEmbed({
-              title: `${EMOJIS.TICKET} Ticket Settings`,
-              color: COLORS.PRIMARY,
-              fields: [
-                { name: "Support Role", value: settings.ticket_support_role ? `<@&${settings.ticket_support_role}>` : "Not set", inline: true },
-                { name: "Log Channel", value: settings.ticket_log_channel ? `<#${settings.ticket_log_channel}>` : "Not set", inline: true },
-                { name: "Category", value: settings.ticket_category ? `<#${settings.ticket_category}>` : "Not set", inline: true },
-                { name: "Total Tickets", value: `${settings.ticket_count}`, inline: true },
-              ],
-            }),
+        const s = guildDb.get(interaction.guildId!);
+        return interaction.reply(infoReply({
+          title: "Ticket Settings",
+          thumbnail: interaction.guild?.iconURL({ size: 256 }),
+          rows: [
+            ["Support role", s.ticket_support_role ? `<@&${s.ticket_support_role}>` : "Not set"],
+            ["Log channel", s.ticket_log_channel ? `<#${s.ticket_log_channel}>` : "Not set"],
+            ["Category", s.ticket_category ? `<#${s.ticket_category}>` : "Not set"],
+            ["Total tickets", `${s.ticket_count}`],
           ],
-        });
+        }));
       }
 
       guildDb.update(interaction.guildId!, updates as never);
-      return interaction.reply({
-        embeds: [successEmbed("Settings Updated", "Ticket system settings have been updated.")],
-        ephemeral: true,
-      });
+      return interaction.reply({ ...okReply("Settings Updated", "Ticket system has been configured."), ephemeral: true });
     }
 
+    // ── rename ──────────────────────────────────────────────────────────────
     if (sub === "rename") {
       const ticket = ticketDb.getByChannel(interaction.channelId);
-      if (!ticket) {
-        return interaction.reply({ embeds: [errorEmbed("This channel is not a ticket.")], ephemeral: true });
-      }
-
+      if (!ticket) return interaction.reply({ ...errReply("This channel is not a ticket."), ephemeral: true });
       if (!await checkPermissions(interaction, [PermissionFlagsBits.ManageChannels], "ticket")) return;
 
       const name = interaction.options.getString("name", true).toLowerCase().replace(/\s+/g, "-");
       await (interaction.channel as TextChannel).setName(`${TICKET_PREFIX}${name}`);
-
-      return interaction.reply({
-        embeds: [successEmbed("Ticket Renamed", `This ticket has been renamed to **${TICKET_PREFIX}${name}**.`)],
-      });
+      return interaction.reply(okReply("Ticket Renamed", `Channel renamed to **${TICKET_PREFIX}${name}**.`));
     }
   },
 };

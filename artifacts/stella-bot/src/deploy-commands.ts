@@ -36,15 +36,9 @@ for (const category of categories) {
 const rest = new REST().setToken(token);
 
 try {
-  console.log(`📡 Deploying ${commands.length} slash command(s)...`);
-
-  if (guildId) {
-    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-    console.log(`✅ Successfully deployed to guild ${guildId} (instant)`);
-  } else {
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    console.log("✅ Successfully deployed globally (may take up to 1 hour)");
-  }
+  console.log(`📡 Deploying ${commands.length} slash command(s) globally...`);
+  await rest.put(Routes.applicationCommands(clientId), { body: commands });
+  console.log("✅ Successfully deployed globally (may take up to 1 hour to appear)");
 } catch (error) {
   console.error("❌ Failed to deploy commands:", error);
 }

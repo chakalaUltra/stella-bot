@@ -23,8 +23,8 @@ export class StellaClient extends Client {
         Partials.GuildMember,
       ],
       allowedMentions: {
-        parse: ["users", "roles"],
-        repliedUser: true,
+        parse: [],
+        repliedUser: false,
       },
     });
   }

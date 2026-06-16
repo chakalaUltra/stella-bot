@@ -1,4 +1,5 @@
-import { okReply, cardReply, CLR } from "../../utils/ui.js";
+import { EmbedBuilder, GuildMember } from "discord.js";
+import { CLR } from "../../utils/ui.js";
 import { afkStore } from "../../state/afk.js";
 import type { PrefixCommand } from "../../types.js";
 
@@ -10,15 +11,32 @@ export default {
   category: "Utility",
   async execute(message, args) {
     const reason = args.join(" ") || "AFK";
+    const member = message.member as GuildMember;
 
     if (afkStore.has(message.author.id)) {
       return message.reply({
-        ...cardReply(`## Already AFK\nYou're already AFK. Send any message to remove your status.`, CLR.WARNING),
+        embeds: [
+          new EmbedBuilder()
+            .setColor(CLR.PRIMARY)
+            .setDescription("You're already AFK. Send any message to remove your status."),
+        ],
       });
     }
 
-    afkStore.set(message.author.id, { reason, since: Date.now() });
+    const originalNickname = member.nickname ?? null;
+    const displayName = member.displayName;
+    const afkNick = `AFK // ${displayName}`.slice(0, 32);
 
-    return message.reply(okReply("AFK Set", `You're now AFK: **${reason}**\nI'll let others know when they ping you.`));
+    afkStore.set(message.author.id, { reason, since: Date.now(), originalNickname });
+
+    await member.setNickname(afkNick).catch(() => null);
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(CLR.PRIMARY)
+          .setDescription(`💤 You're now AFK — **${reason}**`),
+      ],
+    });
   },
 } satisfies PrefixCommand;

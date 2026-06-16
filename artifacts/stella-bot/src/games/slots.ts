@@ -6,90 +6,149 @@ import {
   StringSelectMenuOptionBuilder,
   MessageFlags,
 } from "discord.js";
-import { box, td, CLR, type V2Reply } from "../utils/ui.js";
+import { box, td, divider, CLR, type V2Reply } from "../utils/ui.js";
 
-export const COIN = "⭐";
-export const START_BALANCE = 10;
+// ── Currency ─────────────────────────────────────────────────────────────────
+// Stored as integer cents to avoid float precision issues.
+// 100 cents = 1.00 SC
+
+export const START_BALANCE = 1000; // 10.00 SC
+export const COIN_ICON = "🌠";
+
+export const BETS = [20, 50, 100, 200, 500, 1000] as const;
+export type BetValue = (typeof BETS)[number];
+
+export function formatSC(cents: number): string {
+  return `${(cents / 100).toFixed(2)} SC ${COIN_ICON}`;
+}
+
+// ── Game state ────────────────────────────────────────────────────────────────
 
 export interface SlotsGame {
   userId: string;
   balance: number;
-  bet: number;
+  bet: BetValue;
   ended: boolean;
 }
 
 export const activeGames = new Map<string, SlotsGame>();
 
-export const SYMBOLS = ["7️⃣", "💎", "⭐", "🍒", "🍋", "🍊"] as const;
-type Symbol = (typeof SYMBOLS)[number];
+// ── Symbols ───────────────────────────────────────────────────────────────────
 
-export function spin(): [Symbol, Symbol, Symbol] {
-  const r = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-  return [r(), r(), r()];
+export const SYMBOLS = ["7️⃣", "💎", "🌟", "🍒", "🍋", "🍊"] as const;
+type Sym = (typeof SYMBOLS)[number];
+export type SlotRow = [Sym, Sym, Sym, Sym, Sym];
+export type SlotGrid = [SlotRow, SlotRow, SlotRow];
+
+function randSym(): Sym {
+  // 7️⃣ and 💎 are rarer
+  const weights = [8, 10, 15, 25, 22, 20];
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = Math.floor(Math.random() * total);
+  for (let i = 0; i < SYMBOLS.length; i++) {
+    roll -= weights[i]!;
+    if (roll < 0) return SYMBOLS[i]!;
+  }
+  return SYMBOLS[SYMBOLS.length - 1]!;
 }
 
+function randRow(): SlotRow {
+  return [randSym(), randSym(), randSym(), randSym(), randSym()];
+}
+
+export function spinGrid(): SlotGrid {
+  return [randRow(), randRow(), randRow()];
+}
+
+// ── Win evaluation (payline = middle row, left-to-right consecutive) ──────────
+
 export function calcResult(
-  reels: [Symbol, Symbol, Symbol],
+  payline: SlotRow,
   bet: number,
 ): { payout: number; label: string } {
-  const [a, b, c] = reels;
-  if (a === b && b === c) {
-    if (a === "7️⃣") return { payout: bet * 10, label: "🎉 **JACKPOT!** Three 7s!" };
-    if (a === "💎") return { payout: bet * 7, label: "💎 **Diamond Triple!**" };
-    return { payout: bet * 3, label: "✨ **Triple Match!**" };
+  const [a, b, c, d, e] = payline;
+
+  if (a === b && b === c && c === d && d === e) {
+    if (a === "7️⃣") return { payout: bet * 25, label: "🌟 **MEGA JACKPOT!** Five 7s!" };
+    if (a === "💎") return { payout: bet * 20, label: "💎 **Diamond Five!**" };
+    return { payout: bet * 15, label: "✨ **Five of a Kind!**" };
   }
-  if (a === b || b === c || a === c) {
+  if (a === b && b === c && c === d) {
+    if (a === "7️⃣") return { payout: bet * 12, label: "🎉 **Four 7s!**" };
+    return { payout: bet * 8, label: "🔥 **Four of a Kind!**" };
+  }
+  if (a === b && b === c) {
+    if (a === "7️⃣") return { payout: bet * 6, label: "🎰 **Three 7s!**" };
+    return { payout: bet * 3, label: "✨ **Three of a Kind!**" };
+  }
+  if (a === b) {
+    if (a === "7️⃣") return { payout: bet * 2, label: "🔔 **Pair of 7s!**" };
     return { payout: bet, label: "🔔 **Pair** — bet returned." };
   }
   return { payout: 0, label: "💸 No match." };
 }
 
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function renderGrid(grid: SlotGrid | null): string {
+  if (!grid) {
+    return [
+      `　🎰 🎰 🎰 🎰 🎰`,
+      `▶ 🎰 🎰 🎰 🎰 🎰 ◀`,
+      `　🎰 🎰 🎰 🎰 🎰`,
+    ].join("\n");
+  }
+  return [
+    `　${grid[0].join(" ")}`,
+    `▶ ${grid[1].join(" ")} ◀`,
+    `　${grid[2].join(" ")}`,
+  ].join("\n");
+}
+
 export function buildGameMessage(
   game: SlotsGame,
-  reels: [Symbol, Symbol, Symbol] | null,
+  grid: SlotGrid | null,
   resultLabel: string | null,
 ): V2Reply {
-  const reelStr = reels
-    ? `# ${reels[0]}  ${reels[1]}  ${reels[2]}`
-    : `# 🎰  🎰  🎰`;
+  const isOver = game.ended || game.balance === 0;
+  const canRoll = !isOver && game.balance >= game.bet;
 
-  const balanceLine = `${COIN} **Balance:** ${game.balance} SC  ·  ${COIN} **Bet:** ${game.bet} SC`;
+  const balDisplay = `\`${formatSC(game.balance)}\``;
+  const betDisplay = `\`${formatSC(game.bet)}\``;
 
   const lines: string[] = [
-    `## 🎰 Stella Slots`,
-    balanceLine,
-    ``,
-    reelStr,
+    `## 🎰  S T E L L A  S L O T S`,
+    `**Balance** ${balDisplay}  ·  **Bet** ${betDisplay}`,
   ];
 
   if (resultLabel) lines.push(``, resultLabel);
 
   if (game.ended) {
-    lines.push(``, `-# Game over — final balance: ${COIN} ${game.balance} SC`);
+    lines.push(``, `-# ✦ Game over — final balance: ${balDisplay}`);
   } else if (game.balance === 0) {
-    lines.push(``, `-# You're out of coins! The game has ended.`);
+    lines.push(``, `-# 💀 You're broke! The game has ended.`);
   } else if (game.balance < game.bet) {
-    lines.push(``, `-# ⚠️ Not enough SC to cover your bet — lower it or end the game.`);
+    lines.push(``, `-# ⚠️ Not enough SC for this bet — lower it or end the game.`);
   }
-
-  const isOver = game.ended || game.balance === 0;
-  const canRoll = !isOver && game.balance >= game.bet;
 
   const betMenu = new StringSelectMenuBuilder()
     .setCustomId("slots_bet")
-    .setPlaceholder(`Bet: ${game.bet} SC`)
+    .setPlaceholder(`Bet: ${formatSC(game.bet)}`)
     .setDisabled(isOver)
     .addOptions(
-      new StringSelectMenuOptionBuilder().setLabel("1 SC").setValue("1").setEmoji("⭐").setDefault(game.bet === 1),
-      new StringSelectMenuOptionBuilder().setLabel("2 SC").setValue("2").setEmoji("⭐").setDefault(game.bet === 2),
-      new StringSelectMenuOptionBuilder().setLabel("5 SC").setValue("5").setEmoji("⭐").setDefault(game.bet === 5),
-      new StringSelectMenuOptionBuilder().setLabel("10 SC").setValue("10").setEmoji("⭐").setDefault(game.bet === 10),
+      BETS.map(b =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(`${formatSC(b)}`)
+          .setValue(String(b))
+          .setEmoji(COIN_ICON)
+          .setDefault(game.bet === b)
+      )
     );
 
   const rollBtn = new ButtonBuilder()
     .setCustomId("slots_roll")
-    .setLabel("🎰 Roll")
-    .setStyle(canRoll ? ButtonStyle.Success : ButtonStyle.Secondary)
+    .setLabel("🎰  S P I N")
+    .setStyle(canRoll ? ButtonStyle.Primary : ButtonStyle.Secondary)
     .setDisabled(!canRoll);
 
   const endBtn = new ButtonBuilder()
@@ -101,19 +160,13 @@ export function buildGameMessage(
   const betRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(betMenu);
   const btnRow = new ActionRowBuilder<ButtonBuilder>().addComponents(rollBtn, endBtn);
 
-  const color = isOver
-    ? CLR.INFO
-    : reels === null
-      ? CLR.PRIMARY
-      : resultLabel?.includes("JACKPOT") || resultLabel?.includes("Diamond") || resultLabel?.includes("Triple")
-        ? CLR.SUCCESS
-        : resultLabel?.includes("Pair")
-          ? CLR.WARNING
-          : CLR.ERROR;
-
   return {
     components: [
-      box(color, [td(lines.join("\n"))]),
+      box(CLR.PRIMARY, [
+        td(lines.join("\n")),
+        divider(),
+        td(renderGrid(grid)),
+      ]),
       betRow,
       btnRow,
     ],

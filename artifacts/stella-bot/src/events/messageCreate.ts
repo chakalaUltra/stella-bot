@@ -1,7 +1,8 @@
-import { type Message, EmbedBuilder, TextChannel } from "discord.js";
+import { type Message, EmbedBuilder, TextChannel, GuildMember } from "discord.js";
 import type { StellaClient } from "../client.js";
 import { guildDb } from "../database/db.js";
 import { COLORS, BOT_FOOTER, DEFAULT_PREFIX } from "../config.js";
+import { CLR } from "../utils/ui.js";
 import { afkStore } from "../state/afk.js";
 import { stickyStore } from "../state/sticky.js";
 
@@ -11,38 +12,40 @@ export default {
   async execute(message: Message, client: StellaClient) {
     if (message.author.bot || !message.guild) return;
 
-    // ── AFK: remove status if AFK user sends a message ───────────────────────
+    // ── AFK: remove status when AFK user sends a message ─────────────────────
     if (afkStore.has(message.author.id)) {
+      const entry = afkStore.get(message.author.id)!;
       afkStore.delete(message.author.id);
+
+      const member = message.member as GuildMember;
+      await member.setNickname(entry.originalNickname).catch(() => null);
+
       const notice = await message.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(COLORS.SUCCESS)
-            .setDescription(`👋 Welcome back, **${message.author.displayName}**! Your AFK status has been removed.`)
-            .setFooter({ text: BOT_FOOTER }),
+            .setColor(CLR.PRIMARY as number)
+            .setDescription(`👋 Welcome back, **${member.displayName}**! AFK status removed.`),
         ],
       });
       setTimeout(() => notice.delete().catch(() => null), 5000);
     }
 
-    // ── AFK: notify sender if they mention an AFK user ───────────────────────
+    // ── AFK: notify if a mentioned user is AFK ────────────────────────────────
     for (const [, user] of message.mentions.users) {
       const entry = afkStore.get(user.id);
       if (!entry || user.id === message.author.id) continue;
 
       const elapsed = Math.floor((Date.now() - entry.since) / 1000);
-      const timeStr = elapsed < 60
-        ? `${elapsed}s ago`
-        : elapsed < 3600
-          ? `${Math.floor(elapsed / 60)}m ago`
-          : `${Math.floor(elapsed / 3600)}h ago`;
+      const timeStr =
+        elapsed < 60 ? `${elapsed}s ago` :
+        elapsed < 3600 ? `${Math.floor(elapsed / 60)}m ago` :
+        `${Math.floor(elapsed / 3600)}h ago`;
 
       await message.reply({
         embeds: [
           new EmbedBuilder()
-            .setColor(COLORS.WARNING)
-            .setDescription(`😴 **${user.displayName}** is AFK: **${entry.reason}** *(${timeStr})*`)
-            .setFooter({ text: BOT_FOOTER }),
+            .setColor(CLR.PRIMARY as number)
+            .setDescription(`💤 **${user.displayName}** is AFK — ${entry.reason} *(${timeStr})*`),
         ],
       }).catch(() => null);
     }

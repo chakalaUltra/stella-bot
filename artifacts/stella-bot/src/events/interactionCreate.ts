@@ -17,7 +17,7 @@ import { box, td, divider, sect, errReply, okReply, CLR, type V2Reply } from "..
 import { guildDb, ticketDb } from "../database/db.js";
 import { buildTranscript } from "../utils/transcript.js";
 import { TICKET_PREFIX } from "../config.js";
-import { activeGames, spin, calcResult, buildGameMessage } from "../games/slots.js";
+import { activeGames, spinGrid, calcResult, buildGameMessage, type BetValue } from "../games/slots.js";
 
 export default {
   name: "interactionCreate",
@@ -296,15 +296,14 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
       return interaction.update(buildGameMessage(game, null, "⚠️ Not enough SC! Lower your bet or end the game."));
     }
 
-    const reels = spin();
-    const { payout, label } = calcResult(reels, game.bet);
+    const grid = spinGrid();
+    const { payout, label } = calcResult(grid[1], game.bet);
 
     game.balance = game.balance - game.bet + payout;
     if (game.balance < 0) game.balance = 0;
-
     if (game.balance === 0) game.ended = true;
 
-    return interaction.update(buildGameMessage(game, reels, label));
+    return interaction.update(buildGameMessage(game, grid, label));
   }
 
   // ── Slots — end ───────────────────────────────────────────────────────────
@@ -325,7 +324,7 @@ async function handleSelectMenu(interaction: StringSelectMenuInteraction, _clien
     const game = activeGames.get(interaction.user.id);
     if (!game) return interaction.update({ components: [], flags: MessageFlags.IsComponentsV2 } as V2Reply);
 
-    const newBet = parseInt(interaction.values[0]!, 10);
+    const newBet = parseInt(interaction.values[0]!, 10) as BetValue;
     game.bet = newBet;
 
     return interaction.update(buildGameMessage(game, null, null));

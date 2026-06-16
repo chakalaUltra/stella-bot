@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { StellaClient } from "../../client.js";
 import { errReply } from "../../utils/ui.js";
-import { activeGames, buildGameMessage, START_BALANCE } from "../../games/slots.js";
+import { activeGames, buildGameMessage, START_BALANCE, BETS } from "../../games/slots.js";
 
 export default {
   category: "Fun",
@@ -21,7 +21,7 @@ export default {
     const game = {
       userId: interaction.user.id,
       balance: START_BALANCE,
-      bet: 1,
+      bet: BETS[0],
       ended: false,
     };
 

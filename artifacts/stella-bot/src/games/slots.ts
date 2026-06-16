@@ -5,8 +5,10 @@ import {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   MessageFlags,
+  ComponentType,
+  SeparatorSpacingSize,
 } from "discord.js";
-import { box, td, divider, CLR, type V2Reply } from "../utils/ui.js";
+import { CLR, type V2Reply } from "../utils/ui.js";
 
 // ── Currency ─────────────────────────────────────────────────────────────────
 // Stored as integer cents to avoid float precision issues.
@@ -89,10 +91,12 @@ export function calcResult(
 // ── Render ────────────────────────────────────────────────────────────────────
 
 const IDLE_SYM = "⬜";
+const SPIN_SYM = "🌀";
 
-function renderGrid(grid: SlotGrid | null): string {
-  if (!grid) {
-    const blank = `${IDLE_SYM}  ${IDLE_SYM}  ${IDLE_SYM}  ${IDLE_SYM}  ${IDLE_SYM}`;
+function renderGrid(grid: SlotGrid | null, spinning = false): string {
+  const sym = spinning ? SPIN_SYM : IDLE_SYM;
+  if (!grid || spinning) {
+    const blank = `${sym}  ${sym}  ${sym}  ${sym}  ${sym}`;
     return [`  ${blank}`, `▸ ${blank} ◂`, `  ${blank}`].join("\n");
   }
   return [
@@ -100,6 +104,68 @@ function renderGrid(grid: SlotGrid | null): string {
     `▸ ${grid[1].join("  ")} ◂`,
     `  ${grid[2].join("  ")}`,
   ].join("\n");
+}
+
+// ── Raw container builder helpers ─────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildContainer(lines: string[], grid: SlotGrid | null, spinning: boolean, betRow: ActionRowBuilder<any>, btnRow: ActionRowBuilder<any>): object {
+  return {
+    type: ComponentType.Container,
+    accent_color: CLR.PRIMARY,
+    components: [
+      { type: ComponentType.TextDisplay, content: lines.join("\n") },
+      { type: ComponentType.Separator, divider: true, spacing: SeparatorSpacingSize.Small },
+      { type: ComponentType.TextDisplay, content: renderGrid(grid, spinning) },
+      { type: ComponentType.Separator, divider: true, spacing: SeparatorSpacingSize.Small },
+      betRow.toJSON(),
+      btnRow.toJSON(),
+    ],
+  };
+}
+
+// ── Message builders ──────────────────────────────────────────────────────────
+
+export function buildSpinningMessage(game: SlotsGame): V2Reply {
+  const lines = [
+    `## Stella Slots`,
+    `Balance  **${formatSC(game.balance)}**  ·  Bet  **${formatSC(game.bet)}**`,
+    ``,
+    `-# Spinning...`,
+  ];
+
+  const betMenu = new StringSelectMenuBuilder()
+    .setCustomId("slots_bet")
+    .setPlaceholder(`Bet: ${formatSC(game.bet)}`)
+    .setDisabled(true)
+    .addOptions(
+      BETS.map(b =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(formatSC(b))
+          .setValue(String(b))
+          .setDefault(game.bet === b)
+      )
+    );
+
+  const rollBtn = new ButtonBuilder()
+    .setCustomId("slots_roll")
+    .setLabel("Spin")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+
+  const endBtn = new ButtonBuilder()
+    .setCustomId("slots_end")
+    .setLabel("End Game")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+
+  const betRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(betMenu);
+  const btnRow = new ActionRowBuilder<ButtonBuilder>().addComponents(rollBtn, endBtn);
+
+  return {
+    components: [buildContainer(lines, null, true, betRow, btnRow)],
+    flags: MessageFlags.IsComponentsV2,
+  };
 }
 
 export function buildGameMessage(
@@ -141,28 +207,20 @@ export function buildGameMessage(
   const rollBtn = new ButtonBuilder()
     .setCustomId("slots_roll")
     .setLabel("Spin")
-    .setStyle(canRoll ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    .setStyle(ButtonStyle.Secondary)
     .setDisabled(!canRoll);
 
   const endBtn = new ButtonBuilder()
     .setCustomId("slots_end")
     .setLabel("End Game")
-    .setStyle(isOver ? ButtonStyle.Secondary : ButtonStyle.Danger)
+    .setStyle(ButtonStyle.Secondary)
     .setDisabled(isOver);
 
   const betRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(betMenu);
   const btnRow = new ActionRowBuilder<ButtonBuilder>().addComponents(rollBtn, endBtn);
 
   return {
-    components: [
-      box(CLR.PRIMARY, [
-        td(lines.join("\n")),
-        divider(),
-        td(renderGrid(grid)),
-      ]),
-      betRow,
-      btnRow,
-    ],
+    components: [buildContainer(lines, grid, false, betRow, btnRow)],
     flags: MessageFlags.IsComponentsV2,
   };
 }

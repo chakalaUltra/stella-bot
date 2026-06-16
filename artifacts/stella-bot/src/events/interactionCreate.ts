@@ -11,13 +11,17 @@ import {
   TextChannel,
   Collection,
   MessageFlags,
+  ComponentType,
+  SeparatorSpacingSize,
 } from "discord.js";
 import type { StellaClient } from "../client.js";
 import { box, td, divider, sect, errReply, okReply, CLR, type V2Reply } from "../utils/ui.js";
 import { guildDb, ticketDb } from "../database/db.js";
 import { buildTranscript } from "../utils/transcript.js";
 import { TICKET_PREFIX } from "../config.js";
-import { activeGames, spinGrid, calcResult, buildGameMessage, type BetValue } from "../games/slots.js";
+import { activeGames, spinGrid, calcResult, buildGameMessage, buildSpinningMessage, type BetValue } from "../games/slots.js";
+import { fetchKissGif } from "../utils/kiss.js";
+import { buildKissCard } from "../commands/fun/kiss.js";
 
 export default {
   name: "interactionCreate",
@@ -293,17 +297,23 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
     if (!game || game.ended) return;
 
     if (game.balance < game.bet) {
-      return interaction.update(buildGameMessage(game, null, "⚠️ Not enough SC! Lower your bet or end the game."));
+      return interaction.update(buildGameMessage(game, null, "Not enough SC — lower your bet or end the game."));
     }
 
+    // Show spinning state immediately
+    await interaction.update(buildSpinningMessage(game));
+
+    // Calculate result
     const grid = spinGrid();
     const { payout, label } = calcResult(grid[1], game.bet);
-
     game.balance = game.balance - game.bet + payout;
     if (game.balance < 0) game.balance = 0;
     if (game.balance === 0) game.ended = true;
 
-    return interaction.update(buildGameMessage(game, grid, label));
+    // Brief pause for animation effect, then reveal result
+    await new Promise(r => setTimeout(r, 1400));
+    await interaction.editReply(buildGameMessage(game, grid, label) as V2Reply);
+    return;
   }
 
   // ── Slots — end ───────────────────────────────────────────────────────────
@@ -315,6 +325,27 @@ async function handleButton(interaction: ButtonInteraction, _client: StellaClien
     activeGames.delete(interaction.user.id);
 
     return interaction.update(buildGameMessage(game, null, null));
+  }
+
+  // ── Kiss — kiss back ───────────────────────────────────────────────────────
+  if (customId.startsWith("kiss_back:")) {
+    const parts = customId.split(":");
+    const kisserId = parts[1]!;
+    const kissedId = parts[2]!;
+
+    if (interaction.user.id !== kissedId) {
+      return interaction.reply({ ...errReply("This button isn't for you!"), ephemeral: true });
+    }
+
+    const gifUrl = await fetchKissGif();
+    const card = buildKissCard(kisserId, kissedId, gifUrl, true);
+
+    return interaction.update({
+      components: [card],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { users: [kisserId] },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
   }
 }
 

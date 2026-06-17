@@ -5,6 +5,7 @@ import { COLORS, BOT_FOOTER, DEFAULT_PREFIX } from "../config.js";
 import { CLR } from "../utils/ui.js";
 import { afkStore } from "../state/afk.js";
 import { stickyStore } from "../state/sticky.js";
+import { handleStellaMessage } from "../stella/handler.js";
 
 export default {
   name: "messageCreate",

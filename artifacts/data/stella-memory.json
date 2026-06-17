@@ -3,10 +3,6 @@
   "users": {
     "1117540437016727612": {
       "samples": [
-        "Ok u still here?",
-        "Detach",
-        "<@877122546695307315> are u a sigma or nah gang",
-        "Ok she didn't reply",
         "You here my bot?",
         "Checking if stella will reply",
         "Stella",
@@ -62,10 +58,14 @@
         "Who am i",
         "And who is your owner",
         "No, your creator",
-        "Okay"
+        "Okay",
+        "Stella, tell me about yourself and your owner",
+        "I meant your creator",
+        "Make me a embed with good text design for the rules (10 rules)",
+        "That design is SOO bad. Make it better."
       ],
-      "avgLength": 27,
-      "lastSeen": 1781721845080
+      "avgLength": 28,
+      "lastSeen": 1781722266717
     }
   }
 }

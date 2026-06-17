@@ -26,6 +26,7 @@ function isWakePhrase(content: string): boolean {
   for (const phrase of STELLA_WAKE_PHRASES) {
     if (lower.includes(phrase)) return true;
   }
+  // Any message that starts with "stella" regardless of casing
   if (lower.startsWith("stella")) return true;
   return false;
 }
@@ -56,10 +57,16 @@ function shouldForwardToMistral(message: Message, sessionUserId: string): boolea
   const content = message.content.trim();
   const lower = content.toLowerCase();
 
+  // Always forward owner's messages
   if (message.author.id === sessionUserId) return true;
-  if (lower.includes("stella") || lower.includes(" you ") || lower.endsWith(" you") || lower.startsWith("you ")) return true;
+  // Forward anything that mentions Stella by name (Mistral decides if it's directed at her)
+  if (lower.includes("stella")) return true;
+  // Direct address signals
+  if (lower.includes(" you ") || lower.endsWith(" you") || lower.startsWith("you ")) return true;
+  // Questions are worth considering
   if (content.endsWith("?")) return true;
-  if (content.split(" ").length > 6 && Math.random() < 0.25) return true;
+  // Occasional proactive contribution on longer messages
+  if (content.split(" ").length > 8 && Math.random() < 0.15) return true;
 
   return false;
 }
@@ -140,10 +147,24 @@ async function buildSystemPrompt(message: Message): Promise<string> {
     `  Format: {"title":"...","description":"...","color":0x5865F2,"fields":[{"name":"...","value":"...","inline":true}],"footer":"...","thumbnail":"url"}`,
     `  You may mix plain text with embed tags in one response.`,
     ``,
-    `## Proactive Listening`,
+    `## Proactive Listening — When to Reply vs. Skip`,
     `- You are in active listening mode in this channel.`,
-    `- Only respond if the message is directed at you, asks a question, or you have something genuinely useful to add.`,
-    `- If the message is not meant for you or you have nothing to add, respond with exactly: ${SKIP_SIGNAL}`,
+    `- ONLY respond if the message is clearly directed at you or includes you in the conversation.`,
+    `- If the message merely mentions your name while talking about you or to someone else, do NOT reply — respond with exactly: ${SKIP_SIGNAL}`,
+    `- If the message directly addresses you, gives you a task, or includes you in what's being said, DO reply.`,
+    ``,
+    `Examples of when to SKIP (not directed at you):`,
+    `  - "I have a bot named Stella. She's great." → SKIP (talking about you, not to you)`,
+    `  - "Stella told me earlier..." → SKIP (referencing you, not addressing you)`,
+    `  - "yeah Stella is a solid bot" → SKIP (a comment about you)`,
+    ``,
+    `Examples of when to REPLY (directed at you):`,
+    `  - "Stella, introduce yourself to Alex." → REPLY (you are given a task)`,
+    `  - "By the way, Stella, what do you think?" → REPLY (you are included and asked)`,
+    `  - "Can you list the server members, Stella?" → REPLY (directly asked)`,
+    `  - Any message from your owner → REPLY`,
+    ``,
+    `When in doubt, SKIP. It is always better to stay silent than to interrupt a conversation that wasn't meant for you.`,
     ``,
     `## Server Context`,
     serverContext,
@@ -194,7 +215,10 @@ async function sendMessage(message: Message, text: string): Promise<void> {
 
 // ─── Mistral call helper ───────────────────────────────────────────────────
 
-async function getAIResponse(message: Message, session: { history: Array<{ role: "user" | "assistant"; content: string; authorId?: string; authorName?: string }> }): Promise<string> {
+async function getAIResponse(
+  message: Message,
+  session: { history: Array<{ role: "user" | "assistant"; content: string; authorId?: string; authorName?: string }> },
+): Promise<string> {
   const systemPrompt = await buildSystemPrompt(message);
 
   const historyMessages: MistralMessage[] = session.history.map((h) => ({
@@ -212,7 +236,17 @@ async function getAIResponse(message: Message, session: { history: Array<{ role:
     { role: "user", content: userContent },
   ];
 
-  return callMistral(messages);
+  // Show typing indicator and keep it alive for the duration of the API call
+  await message.channel.sendTyping().catch(() => null);
+  const typingInterval = setInterval(() => {
+    message.channel.sendTyping().catch(() => null);
+  }, 8000);
+
+  try {
+    return await callMistral(messages);
+  } finally {
+    clearInterval(typingInterval);
+  }
 }
 
 // ─── Main entry point ──────────────────────────────────────────────────────

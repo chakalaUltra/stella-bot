@@ -13,6 +13,10 @@ export default {
   async execute(message: Message, client: StellaClient) {
     if (message.author.bot || !message.guild) return;
 
+    // ── Stella AI: handle wake/sleep/listening before anything else ───────────
+    const stellaHandled = await handleStellaMessage(message, client);
+    if (stellaHandled) return;
+
     // ── AFK: remove status when AFK user sends a message ─────────────────────
     if (afkStore.has(message.author.id)) {
       const entry = afkStore.get(message.author.id)!;

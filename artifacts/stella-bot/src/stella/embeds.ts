@@ -58,11 +58,11 @@ function extractJson(raw: string): string {
 
 function buttonStyleFor(style?: string): ButtonStyle {
   switch (style) {
-    case "secondary": return ButtonStyle.Secondary;
+    case "primary":   return ButtonStyle.Primary;
     case "success":   return ButtonStyle.Success;
     case "danger":    return ButtonStyle.Danger;
     case "link":      return ButtonStyle.Link;
-    default:          return ButtonStyle.Primary;
+    default:          return ButtonStyle.Secondary; // grey by default
   }
 }
 
@@ -111,12 +111,13 @@ export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions 
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(fieldText));
   }
 
-  // ── Action rows (buttons + select) ──────────────────────────────────────
-
-  const actionRows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
+  // ── Action rows (buttons + select) — placed inside the container ─────────
 
   // Buttons — up to 5 per row
   if (schema.buttons?.length) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small),
+    );
     const chunks: typeof schema.buttons[] = [];
     for (let i = 0; i < schema.buttons.length; i += 5) {
       chunks.push(schema.buttons.slice(i, i + 5));
@@ -137,12 +138,17 @@ export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions 
         if (btn.disabled) builder.setDisabled(true);
         row.addComponents(builder);
       }
-      actionRows.push(row);
+      container.addActionRowComponents(row);
     }
   }
 
-  // Select menu — max 25 options
+  // Select menu — max 25 options, also inside the container
   if (schema.select?.options?.length) {
+    if (!schema.buttons?.length) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small),
+      );
+    }
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`stella_select_${Date.now()}`)
       .setPlaceholder(schema.select.placeholder ?? "Select an option")
@@ -156,11 +162,11 @@ export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions 
         }),
       );
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
-    actionRows.push(row);
+    container.addActionRowComponents(row);
   }
 
   return {
-    components: [container, ...actionRows],
+    components: [container],
     flags: MessageFlags.IsComponentsV2,
   };
 }

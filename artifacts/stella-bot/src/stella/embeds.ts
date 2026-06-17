@@ -1,0 +1,211 @@
+import {
+  ContainerBuilder,
+  SectionBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  ThumbnailBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  MessageFlags,
+  SeparatorSpacingSize,
+  type MessageCreateOptions,
+} from "discord.js";
+
+// Default dark purple to match the bot's existing embed style
+export const STELLA_DEFAULT_COLOR = 0x6b2fa0;
+
+// ─── Schema Stella emits ───────────────────────────────────────────────────
+
+export interface StellaEmbedSchema {
+  color?: number;
+  header?: string;
+  subheader?: string;
+  thumbnail?: string;
+  body?: string;
+  fields?: Array<{ name: string; value: string }>;
+  buttons?: Array<{
+    label: string;
+    style?: "primary" | "secondary" | "success" | "danger" | "link";
+    url?: string;
+    disabled?: boolean;
+  }>;
+  select?: {
+    placeholder?: string;
+    options: Array<{ label: string; value: string; description?: string }>;
+  };
+}
+
+// ─── Robust JSON extractor ─────────────────────────────────────────────────
+// Handles Mistral wrapping JSON in ```json ... ``` or other stray text
+
+function extractJson(raw: string): string {
+  // Strip markdown code fences
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1]!.trim();
+  // Try to find a raw JSON object
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    return raw.slice(start, end + 1).trim();
+  }
+  return raw.trim();
+}
+
+// ─── V2 component builder ──────────────────────────────────────────────────
+
+function buttonStyleFor(style?: string): ButtonStyle {
+  switch (style) {
+    case "secondary": return ButtonStyle.Secondary;
+    case "success":   return ButtonStyle.Success;
+    case "danger":    return ButtonStyle.Danger;
+    case "link":      return ButtonStyle.Link;
+    default:          return ButtonStyle.Primary;
+  }
+}
+
+export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions {
+  const color = schema.color ?? STELLA_DEFAULT_COLOR;
+  const container = new ContainerBuilder().setAccentColor(color);
+
+  // Header + optional thumbnail
+  if (schema.header) {
+    const headerText = schema.subheader
+      ? `## ${schema.header}\n${schema.subheader}`
+      : `## ${schema.header}`;
+
+    if (schema.thumbnail) {
+      const section = new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(headerText))
+        .setThumbnailAccessory(new ThumbnailBuilder().setURL(schema.thumbnail));
+      container.addSectionComponents(section);
+    } else {
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headerText));
+    }
+  }
+
+  // Divider before body/fields if we have a header
+  if (schema.header && (schema.body || schema.fields?.length)) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    );
+  }
+
+  // Body text
+  if (schema.body) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(schema.body));
+  }
+
+  // Fields as key-value text rows
+  if (schema.fields?.length) {
+    const fieldText = schema.fields
+      .map((f) => `**${f.name}** · ${f.value}`)
+      .join("\n");
+    if (schema.body) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small),
+      );
+    }
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(fieldText));
+  }
+
+  // ── Action rows (buttons + select) ──────────────────────────────────────
+
+  const actionRows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
+
+  // Buttons — up to 5 per row
+  if (schema.buttons?.length) {
+    const chunks: typeof schema.buttons[] = [];
+    for (let i = 0; i < schema.buttons.length; i += 5) {
+      chunks.push(schema.buttons.slice(i, i + 5));
+    }
+    for (const chunk of chunks) {
+      const row = new ActionRowBuilder<ButtonBuilder>();
+      for (let i = 0; i < chunk.length; i++) {
+        const btn = chunk[i]!;
+        const builder = new ButtonBuilder()
+          .setLabel(btn.label)
+          .setStyle(buttonStyleFor(btn.style));
+
+        if (btn.style === "link" && btn.url) {
+          builder.setURL(btn.url);
+        } else {
+          builder.setCustomId(`stella_btn_${i}_${Date.now()}`);
+        }
+        if (btn.disabled) builder.setDisabled(true);
+        row.addComponents(builder);
+      }
+      actionRows.push(row);
+    }
+  }
+
+  // Select menu — max 25 options
+  if (schema.select?.options?.length) {
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`stella_select_${Date.now()}`)
+      .setPlaceholder(schema.select.placeholder ?? "Select an option")
+      .addOptions(
+        schema.select.options.slice(0, 25).map((o) => {
+          const opt = new StringSelectMenuOptionBuilder()
+            .setLabel(o.label)
+            .setValue(o.value);
+          if (o.description) opt.setDescription(o.description);
+          return opt;
+        }),
+      );
+    const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+    actionRows.push(row);
+  }
+
+  return {
+    components: [container, ...actionRows],
+    flags: MessageFlags.IsComponentsV2,
+  };
+}
+
+// ─── Parse all [EMBED]...[/EMBED] blocks from a Stella response ────────────
+
+export interface ParseResult {
+  textParts: string[];
+  messages: MessageCreateOptions[];
+}
+
+export function parseStellaResponse(text: string): ParseResult {
+  const embedRegex = /\[EMBED\]([\s\S]*?)\[\/EMBED\]/gi;
+  const textParts: string[] = [];
+  const messages: MessageCreateOptions[] = [];
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = embedRegex.exec(text)) !== null) {
+    // Capture any text before this embed block
+    const before = text.slice(lastIndex, match.index).trim();
+    if (before) textParts.push(before);
+
+    try {
+      const json = extractJson(match[1]!);
+      const schema = JSON.parse(json) as StellaEmbedSchema;
+      messages.push(buildV2Message(schema));
+    } catch (err) {
+      console.error("[Stella] Failed to parse embed JSON:", err, "\nRaw:", match[1]);
+      // Emit a fallback embed so the user knows something was attempted
+      messages.push(
+        buildV2Message({
+          header: "Embed",
+          body: "_Failed to render embed — the AI returned invalid format._",
+        }),
+      );
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Capture any trailing text after the last embed
+  const tail = text.slice(lastIndex).trim();
+  if (tail) textParts.push(tail);
+
+  return { textParts, messages };
+}

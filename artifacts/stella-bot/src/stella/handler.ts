@@ -1,8 +1,4 @@
-import {
-  type Message,
-  EmbedBuilder,
-  TextChannel,
-} from "discord.js";
+import { type Message, TextChannel } from "discord.js";
 import type { StellaClient } from "../client.js";
 import {
   STELLA_OWNER_ID,
@@ -17,7 +13,7 @@ import { stellaState } from "./state.js";
 import { stellaMemory } from "./memory.js";
 import { gatherServerContext, getRecentMessages } from "./context.js";
 import { callMistral, type MistralMessage } from "./mistral.js";
-import { COLORS } from "../config.js";
+import { parseStellaResponse, STELLA_DEFAULT_COLOR } from "./embeds.js";
 
 // ─── Wake / Sleep detection ────────────────────────────────────────────────
 
@@ -71,43 +67,7 @@ function shouldForwardToMistral(message: Message, sessionUserId: string): boolea
   return false;
 }
 
-// ─── Embed parsing ─────────────────────────────────────────────────────────
-
-interface ParsedEmbed {
-  title?: string;
-  description?: string;
-  color?: number;
-  fields?: Array<{ name: string; value: string; inline?: boolean }>;
-  footer?: string;
-  thumbnail?: string;
-  image?: string;
-}
-
-function parseEmbeds(text: string): { cleaned: string; embeds: EmbedBuilder[] } {
-  const embedRegex = /\[EMBED\]([\s\S]*?)\[\/EMBED\]/gi;
-  const embeds: EmbedBuilder[] = [];
-  const cleaned = text
-    .replace(embedRegex, (_, json: string) => {
-      try {
-        const data = JSON.parse(json.trim()) as ParsedEmbed;
-        const embed = new EmbedBuilder();
-        if (data.title) embed.setTitle(data.title);
-        if (data.description) embed.setDescription(data.description);
-        embed.setColor(data.color ?? COLORS.INFO);
-        if (data.fields?.length) embed.addFields(data.fields);
-        if (data.footer) embed.setFooter({ text: data.footer });
-        if (data.thumbnail) embed.setThumbnail(data.thumbnail);
-        if (data.image) embed.setImage(data.image);
-        embeds.push(embed);
-      } catch {
-        // malformed embed JSON — skip
-      }
-      return "";
-    })
-    .trim();
-
-  return { cleaned, embeds };
-}
+// (embed parsing handled by parseStellaResponse in embeds.ts)
 
 // ─── System prompt ─────────────────────────────────────────────────────────
 
@@ -144,9 +104,19 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     ``,
     `## Capabilities`,
     `- You have full visibility into the server: members, roles, channels, recent chat history.`,
-    `- To create a Discord embed, wrap embed JSON in [EMBED]...[/EMBED] tags.`,
-    `  Format: {"title":"...","description":"...","color":0x5865F2,"fields":[{"name":"...","value":"...","inline":true}],"footer":"...","thumbnail":"url"}`,
-    `  You may mix plain text with embed tags in one response.`,
+    `- To create a rich Discord embed (V2 components), wrap a JSON object in [EMBED]...[/EMBED] tags.`,
+    `- Default accent color is ${STELLA_DEFAULT_COLOR} (dark purple). Override with "color": <decimal integer>.`,
+    `- Supported fields (all optional):`,
+    `    "header"     — bold title at the top (string)`,
+    `    "subheader"  — smaller subtitle under header (string)`,
+    `    "thumbnail"  — image URL shown beside header (string)`,
+    `    "body"       — main markdown text block (string)`,
+    `    "fields"     — array of {name, value} key-value rows (array)`,
+    `    "buttons"    — array of {label, style, url?} — style: "primary"|"secondary"|"success"|"danger"|"link" (array, max 25)`,
+    `    "select"     — {placeholder, options: [{label, value, description?}]} dropdown menu (object, max 25 options)`,
+    `- Example: [EMBED]{"header":"Server Stats","subheader":"Live overview","body":"Everything looks good.","fields":[{"name":"Members","value":"42"},{"name":"Roles","value":"7"}],"buttons":[{"label":"Refresh","style":"primary"},{"label":"Docs","style":"link","url":"https://discord.com"}]}[/EMBED]`,
+    `- You may output plain text before or after an [EMBED] block in the same message.`,
+    `- IMPORTANT: Output raw JSON only inside [EMBED] tags — no markdown code fences, no extra commentary inside the block.`,
     ``,
     `## Proactive Listening — When to Reply vs. Skip`,
     `- You are in active listening mode in this channel.`,
@@ -196,22 +166,23 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
 // ─── Send Stella's message ─────────────────────────────────────────────────
 
 async function sendMessage(message: Message, text: string): Promise<void> {
-  const { cleaned, embeds } = parseEmbeds(text);
+  const { textParts, messages: embedMessages } = parseStellaResponse(text);
   const channel = message.channel;
 
-  if (embeds.length > 0 && !cleaned) {
-    await channel.send({ embeds }).catch(() => null);
-  } else if (embeds.length > 0 && cleaned) {
-    await channel.send({ content: cleaned, embeds }).catch(() => null);
-  } else if (cleaned) {
-    if (cleaned.length <= 2000) {
-      await channel.send({ content: cleaned }).catch(() => null);
-    } else {
-      const chunks = cleaned.match(/[\s\S]{1,2000}/g) ?? [];
-      for (const chunk of chunks) {
-        await channel.send({ content: chunk }).catch(() => null);
-      }
+  // Send any leading/interleaved text first
+  for (const part of textParts) {
+    if (!part) continue;
+    const chunks = part.match(/[\s\S]{1,2000}/g) ?? [];
+    for (const chunk of chunks) {
+      await channel.send({ content: chunk }).catch(() => null);
     }
+  }
+
+  // Send each V2 embed message
+  for (const embedMsg of embedMessages) {
+    await channel.send(embedMsg).catch((err) => {
+      console.error("[Stella] Failed to send embed:", err);
+    });
   }
 }
 

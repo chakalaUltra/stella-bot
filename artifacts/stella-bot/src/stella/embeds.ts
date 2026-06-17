@@ -172,32 +172,57 @@ export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions 
 }
 
 // ─── Parse all [EMBED]...[/EMBED] blocks from a Stella response ────────────
+// Also catches bare ```json {...} ``` blocks Mistral emits on long responses
+// when it ignores the "no code fences" instruction.
 
 export interface ParseResult {
   textParts: string[];
   messages: MessageCreateOptions[];
 }
 
+const EMBED_KEYS: ReadonlySet<string> = new Set([
+  "header", "subheader", "body", "fields", "buttons", "select", "thumbnail", "color",
+]);
+
+function looksLikeEmbedSchema(obj: unknown): obj is StellaEmbedSchema {
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) return false;
+  return Object.keys(obj).some((k) => EMBED_KEYS.has(k));
+}
+
+// Matches either [EMBED]...[/EMBED] or ```(json)?{...}```
+// Group 1 = EMBED inner content | Group 2 = raw code-fence JSON
+const COMBINED_REGEX =
+  /\[EMBED\]([\s\S]*?)\[\/EMBED\]|```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi;
+
 export function parseStellaResponse(text: string): ParseResult {
-  const embedRegex = /\[EMBED\]([\s\S]*?)\[\/EMBED\]/gi;
   const textParts: string[] = [];
   const messages: MessageCreateOptions[] = [];
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = embedRegex.exec(text)) !== null) {
-    // Capture any text before this embed block
+  while ((match = COMBINED_REGEX.exec(text)) !== null) {
     const before = text.slice(lastIndex, match.index).trim();
     if (before) textParts.push(before);
 
+    const rawInner = match[1] ?? match[2]!; // EMBED content or bare JSON
+    const isBareFence = match[1] === undefined;
+
     try {
-      const json = extractJson(match[1]!);
-      const schema = JSON.parse(json) as StellaEmbedSchema;
-      messages.push(buildV2Message(schema));
+      const json = extractJson(rawInner);
+      const parsed = JSON.parse(json) as unknown;
+
+      // For bare code fences, only treat as embed if it has embed-like keys
+      if (isBareFence && !looksLikeEmbedSchema(parsed)) {
+        // Not an embed — keep as text
+        if (match[0].trim()) textParts.push(match[0].trim());
+        lastIndex = match.index + match[0].length;
+        continue;
+      }
+
+      messages.push(buildV2Message(parsed as StellaEmbedSchema));
     } catch (err) {
-      console.error("[Stella] Failed to parse embed JSON:", err, "\nRaw:", match[1]);
-      // Emit a fallback embed so the user knows something was attempted
+      console.error("[Stella] Failed to parse embed JSON:", err, "\nRaw:", rawInner);
       messages.push(
         buildV2Message({
           header: "Embed",
@@ -209,7 +234,7 @@ export function parseStellaResponse(text: string): ParseResult {
     lastIndex = match.index + match[0].length;
   }
 
-  // Capture any trailing text after the last embed
+  // Trailing text
   const tail = text.slice(lastIndex).trim();
   if (tail) textParts.push(tail);
 

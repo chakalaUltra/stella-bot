@@ -15,7 +15,7 @@ import {
 } from "./config.js";
 import { stellaState } from "./state.js";
 import { stellaMemory } from "./memory.js";
-import { gatherServerContext } from "./context.js";
+import { gatherServerContext, getRecentMessages } from "./context.js";
 import { callMistral, type MistralMessage } from "./mistral.js";
 import { COLORS } from "../config.js";
 
@@ -111,13 +111,14 @@ function parseEmbeds(text: string): { cleaned: string; embeds: EmbedBuilder[] } 
 
 // ─── System prompt ─────────────────────────────────────────────────────────
 
-async function buildSystemPrompt(message: Message): Promise<string> {
+async function buildSystemPrompt(message: Message, includeRecentMessages = true): Promise<string> {
   const guild = message.guild!;
   const channel = message.channel;
 
-  const serverContext = await gatherServerContext(guild, channel).catch(
-    () => "Server context unavailable.",
-  );
+  const [serverContext, recentMessages] = await Promise.all([
+    gatherServerContext(guild, channel).catch(() => "Server context unavailable."),
+    includeRecentMessages ? getRecentMessages(channel).catch(() => "") : Promise.resolve(""),
+  ]);
   const facts = stellaMemory.getFacts();
   const ownerStyle = stellaMemory.buildStyleDescription(STELLA_OWNER_ID);
   const authorStyle =
@@ -168,6 +169,7 @@ async function buildSystemPrompt(message: Message): Promise<string> {
     ``,
     `## Server Context`,
     serverContext,
+    recentMessages,
   ];
 
   if (facts.length > 0) {
@@ -215,35 +217,41 @@ async function sendMessage(message: Message, text: string): Promise<void> {
 
 // ─── Mistral call helper ───────────────────────────────────────────────────
 
+const MISTRAL_TIMEOUT_MS = 30_000;
+
 async function getAIResponse(
   message: Message,
   session: { history: Array<{ role: "user" | "assistant"; content: string; authorId?: string; authorName?: string }> },
 ): Promise<string> {
-  const systemPrompt = await buildSystemPrompt(message);
-
-  const historyMessages: MistralMessage[] = session.history.map((h) => ({
-    role: h.role,
-    content:
-      h.role === "user" && h.authorName
-        ? `[${h.authorName}]: ${h.content}`
-        : h.content,
-  }));
-
-  const userContent = `[${message.author.displayName}]: ${message.content.trim()}`;
-  const messages: MistralMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...historyMessages,
-    { role: "user", content: userContent },
-  ];
-
-  // Show typing indicator and keep it alive for the duration of the API call
+  // Fire typing indicator immediately — before any async work
   await message.channel.sendTyping().catch(() => null);
   const typingInterval = setInterval(() => {
     message.channel.sendTyping().catch(() => null);
   }, 8000);
 
   try {
-    return await callMistral(messages);
+    const systemPrompt = await buildSystemPrompt(message);
+
+    const historyMessages: MistralMessage[] = session.history.map((h) => ({
+      role: h.role,
+      content:
+        h.role === "user" && h.authorName
+          ? `[${h.authorName}]: ${h.content}`
+          : h.content,
+    }));
+
+    const userContent = `[${message.author.displayName}]: ${message.content.trim()}`;
+    const messages: MistralMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...historyMessages,
+      { role: "user", content: userContent },
+    ];
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Mistral request timed out after 30s")), MISTRAL_TIMEOUT_MS),
+    );
+
+    return await Promise.race([callMistral(messages), timeout]);
   } finally {
     clearInterval(typingInterval);
   }
@@ -289,18 +297,21 @@ export async function handleStellaMessage(
 
     stellaState.startSession(guildId, channelId, authorId, minutes, onExpire);
 
-    // Treat the wake message as the first message and respond naturally
+    // Respond to the wake message — never stay silent on wake
     try {
       const newSession = stellaState.getSession(guildId, channelId)!;
       const reply = await getAIResponse(message, newSession);
 
-      if (reply && reply !== SKIP_SIGNAL && !reply.startsWith(SKIP_SIGNAL)) {
-        stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
-        stellaState.addToHistory(guildId, channelId, "assistant", reply);
-        await sendMessage(message, reply);
-      }
+      const finalReply = (!reply || reply === SKIP_SIGNAL || reply.startsWith(SKIP_SIGNAL))
+        ? "Ready."
+        : reply;
+
+      stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
+      stellaState.addToHistory(guildId, channelId, "assistant", finalReply);
+      await sendMessage(message, finalReply);
     } catch (err) {
       console.error("[Stella] Mistral error on wake:", err);
+      await message.channel.send({ content: "Ready." }).catch(() => null);
     }
 
     return true;

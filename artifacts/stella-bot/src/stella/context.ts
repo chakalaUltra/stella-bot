@@ -1,7 +1,21 @@
 import type { Guild, TextBasedChannel } from "discord.js";
 import { CONTEXT_MESSAGE_LIMIT } from "./config.js";
 
+interface CachedContext {
+  text: string;
+  expiresAt: number;
+}
+
+const contextCache = new Map<string, CachedContext>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function gatherServerContext(guild: Guild, channel: TextBasedChannel): Promise<string> {
+  const cacheKey = `${guild.id}:${channel.id}`;
+  const cached = contextCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.text;
+  }
+
   const lines: string[] = [];
 
   lines.push(`## Server: ${guild.name} (ID: ${guild.id})`);
@@ -37,25 +51,6 @@ export async function gatherServerContext(guild: Guild, channel: TextBasedChanne
   }
 
   try {
-    const channelName = "name" in channel ? (channel as { name: string }).name : "unknown";
-    lines.push(`\nCurrent channel: #${channelName} (ID: ${channel.id})`);
-
-    if ("messages" in channel) {
-      const msgs = await (channel as { messages: { fetch: (opts: { limit: number }) => Promise<Map<string, { author: { username: string; id: string; bot: boolean }; content: string }>> } }).messages.fetch({ limit: CONTEXT_MESSAGE_LIMIT });
-      const recent = Array.from(msgs.values())
-        .filter((m) => !m.author.bot && m.content.trim())
-        .slice(0, CONTEXT_MESSAGE_LIMIT)
-        .reverse()
-        .map((m) => `  [${m.author.username}]: ${m.content.slice(0, 200)}`);
-      if (recent.length > 0) {
-        lines.push(`\nRecent channel messages:\n${recent.join("\n")}`);
-      }
-    }
-  } catch {
-    lines.push("\nChannel history: unavailable");
-  }
-
-  try {
     const channels = guild.channels.cache
       .filter((c) => c.isTextBased())
       .map((c) => `  - #${c.name} (ID: ${c.id})`)
@@ -65,5 +60,34 @@ export async function gatherServerContext(guild: Guild, channel: TextBasedChanne
     lines.push("\nChannels: unavailable");
   }
 
-  return lines.join("\n");
+  try {
+    const channelName = "name" in channel ? (channel as { name: string }).name : "unknown";
+    lines.push(`\nCurrent channel: #${channelName} (ID: ${channel.id})`);
+  } catch {
+    // ignore
+  }
+
+  const text = lines.join("\n");
+  contextCache.set(cacheKey, { text, expiresAt: Date.now() + CACHE_TTL_MS });
+  return text;
+}
+
+export async function getRecentMessages(channel: TextBasedChannel): Promise<string> {
+  try {
+    if (!("messages" in channel)) return "";
+    const msgs = await (channel as { messages: { fetch: (opts: { limit: number }) => Promise<Map<string, { author: { username: string; id: string; bot: boolean }; content: string }>> } }).messages.fetch({ limit: CONTEXT_MESSAGE_LIMIT });
+    const recent = Array.from(msgs.values())
+      .filter((m) => !m.author.bot && m.content.trim())
+      .slice(0, CONTEXT_MESSAGE_LIMIT)
+      .reverse()
+      .map((m) => `  [${m.author.username}]: ${m.content.slice(0, 200)}`);
+    if (recent.length === 0) return "";
+    return `\nRecent channel messages:\n${recent.join("\n")}`;
+  } catch {
+    return "";
+  }
+}
+
+export function invalidateContextCache(guildId: string, channelId: string): void {
+  contextCache.delete(`${guildId}:${channelId}`);
 }

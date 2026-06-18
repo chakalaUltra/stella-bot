@@ -120,6 +120,13 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     `- You may output plain text before or after an [EMBED] block in the same message.`,
     `- IMPORTANT: Output raw JSON only inside [EMBED] tags — no markdown code fences, no extra commentary inside the block.`,
     ``,
+    `## GIFs & Images`,
+    `- You can send a GIF by writing [GIF:search terms] anywhere in your response. Example: [GIF:cat judging you]`,
+    `- The search terms should be descriptive and specific — they go straight to Tenor.`,
+    `- Use GIFs when they genuinely fit: reacting to something funny, emphasizing a point with humor, celebrating something, etc.`,
+    `- Occasionally throw one in on your own during casual conversation — maybe 1 in 5 or 6 casual exchanges if the vibe is right. Don't overdo it.`,
+    `- You can combine a GIF with text or an embed in the same response.`,
+    ``,
     `## Proactive Listening — When to Reply vs. Skip`,
     `- You are in active listening mode in this channel.`,
     `- ONLY respond if the message is clearly directed at you or includes you in the conversation.`,
@@ -168,7 +175,7 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
 // ─── Send Stella's message ─────────────────────────────────────────────────
 
 async function sendMessage(message: Message, text: string): Promise<void> {
-  const { textParts, messages: embedMessages } = parseStellaResponse(text);
+  const { textParts, messages: embedMessages } = await parseStellaResponse(text);
   const channel = message.channel;
 
   // Send any leading/interleaved text first

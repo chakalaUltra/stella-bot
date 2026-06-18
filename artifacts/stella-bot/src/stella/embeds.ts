@@ -13,6 +13,7 @@ import {
   SeparatorSpacingSize,
   type MessageCreateOptions,
 } from "discord.js";
+import { searchGif } from "./gif.js";
 
 // Default dark purple to match the bot's existing embed style
 export const STELLA_DEFAULT_COLOR = 0x6b2fa0;
@@ -171,9 +172,8 @@ export function buildV2Message(schema: StellaEmbedSchema): MessageCreateOptions 
   };
 }
 
-// ─── Parse all [EMBED]...[/EMBED] blocks from a Stella response ────────────
-// Also catches bare ```json {...} ``` blocks Mistral emits on long responses
-// when it ignores the "no code fences" instruction.
+// ─── Parse all special tags from a Stella response ─────────────────────────
+// Handles: [EMBED]...[/EMBED], bare ```json {...}```, and [GIF:query]
 
 export interface ParseResult {
   textParts: string[];
@@ -189,32 +189,47 @@ function looksLikeEmbedSchema(obj: unknown): obj is StellaEmbedSchema {
   return Object.keys(obj).some((k) => EMBED_KEYS.has(k));
 }
 
-// Matches either [EMBED]...[/EMBED] or ```(json)?{...}```
-// Group 1 = EMBED inner content | Group 2 = raw code-fence JSON
-const COMBINED_REGEX =
-  /\[EMBED\]([\s\S]*?)\[\/EMBED\]|```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi;
+// Group 1 = [EMBED] inner  |  Group 2 = bare code-fence JSON  |  Group 3 = GIF query
+function buildCombinedRegex(): RegExp {
+  return /\[EMBED\]([\s\S]*?)\[\/EMBED\]|```(?:json)?\s*(\{[\s\S]*?\})\s*```|\[GIF:(.*?)\]/gi;
+}
 
-export function parseStellaResponse(text: string): ParseResult {
+export async function parseStellaResponse(text: string): Promise<ParseResult> {
   const textParts: string[] = [];
   const messages: MessageCreateOptions[] = [];
 
+  const regex = buildCombinedRegex();
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = COMBINED_REGEX.exec(text)) !== null) {
+  while ((match = regex.exec(text)) !== null) {
     const before = text.slice(lastIndex, match.index).trim();
     if (before) textParts.push(before);
 
-    const rawInner = match[1] ?? match[2]!; // EMBED content or bare JSON
+    // ── GIF tag ────────────────────────────────────────────────────────────
+    if (match[3] !== undefined) {
+      const query = match[3].trim();
+      const url = await searchGif(query);
+      if (url) {
+        // Plain URL message — Discord auto-embeds GIFs inline
+        messages.push({ content: url });
+      } else {
+        // No result or no key — silently omit rather than show a broken message
+        console.warn(`[Stella] GIF search returned nothing for: "${query}"`);
+      }
+      lastIndex = match.index + match[0].length;
+      continue;
+    }
+
+    // ── Embed / code-fence JSON ────────────────────────────────────────────
+    const rawInner = match[1] ?? match[2]!;
     const isBareFence = match[1] === undefined;
 
     try {
       const json = extractJson(rawInner);
       const parsed = JSON.parse(json) as unknown;
 
-      // For bare code fences, only treat as embed if it has embed-like keys
       if (isBareFence && !looksLikeEmbedSchema(parsed)) {
-        // Not an embed — keep as text
         if (match[0].trim()) textParts.push(match[0].trim());
         lastIndex = match.index + match[0].length;
         continue;
@@ -234,7 +249,6 @@ export function parseStellaResponse(text: string): ParseResult {
     lastIndex = match.index + match[0].length;
   }
 
-  // Trailing text
   const tail = text.slice(lastIndex).trim();
   if (tail) textParts.push(tail);
 

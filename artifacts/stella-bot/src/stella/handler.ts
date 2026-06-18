@@ -61,10 +61,30 @@ function shouldForwardToMistral(message: Message, sessionUserId: string): boolea
   if (lower.includes(" you ") || lower.endsWith(" you") || lower.startsWith("you ")) return true;
   // Questions are worth considering
   if (content.endsWith("?")) return true;
-  // Occasional proactive contribution on longer messages
-  if (content.split(" ").length > 8 && Math.random() < 0.15) return true;
+  // Occasional proactive contribution on longer messages (also gives reaction opportunities)
+  if (content.split(" ").length > 8 && Math.random() < 0.25) return true;
 
   return false;
+}
+
+// ─── Reaction extraction ────────────────────────────────────────────────────
+// Strips [REACT:emoji] tags from Stella's response and returns them separately.
+
+function extractReactions(text: string): { cleaned: string; emojis: string[] } {
+  const emojis: string[] = [];
+  const cleaned = text
+    .replace(/\[REACT:([^\]]+)\]/gi, (_, emoji: string) => {
+      emojis.push(emoji.trim());
+      return "";
+    })
+    .trim();
+  return { cleaned, emojis };
+}
+
+async function applyReactions(message: Message, emojis: string[]): Promise<void> {
+  for (const emoji of emojis) {
+    await message.react(emoji).catch(() => null);
+  }
 }
 
 // (embed parsing handled by parseStellaResponse in embeds.ts)
@@ -126,6 +146,14 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     `- Use GIFs when they genuinely fit: reacting to something funny, emphasizing a point with humor, celebrating something, etc.`,
     `- Occasionally throw one in on your own during casual conversation — maybe 1 in 5 or 6 casual exchanges if the vibe is right. Don't overdo it.`,
     `- You can combine a GIF with text or an embed in the same response.`,
+    ``,
+    `## Emoji Reactions`,
+    `- You can react to the message you're replying to by writing [REACT:emoji] anywhere in your response. Example: [REACT:💀] or [REACT:🔥]`,
+    `- Use standard Unicode emoji only — no custom Discord emotes.`,
+    `- You can stack multiple reactions: [REACT:😭][REACT:💀]`,
+    `- React when it genuinely fits — something funny, impressive, cursed, wholesome, etc. Don't force it.`,
+    `- If you want to react but have nothing to say, just write [REACT:emoji] and nothing else — you'll react silently without sending a message.`,
+    `- Don't react to every message. Maybe 1 in 4 or 5 casual messages at most.`,
     ``,
     `## Proactive Listening — When to Reply vs. Skip`,
     `- You are in active listening mode in this channel.`,
@@ -280,12 +308,13 @@ export async function handleStellaMessage(
     // Respond to the wake message — never stay silent on wake
     try {
       const newSession = stellaState.getSession(guildId, channelId)!;
-      const reply = await getAIResponse(message, newSession);
+      const raw = await getAIResponse(message, newSession);
+      const { cleaned: reply, emojis } = extractReactions(
+        (!raw || raw === SKIP_SIGNAL || raw.startsWith(SKIP_SIGNAL)) ? "Ready." : raw,
+      );
+      const finalReply = reply || "Ready.";
 
-      const finalReply = (!reply || reply === SKIP_SIGNAL || reply.startsWith(SKIP_SIGNAL))
-        ? "Ready."
-        : reply;
-
+      await applyReactions(message, emojis);
       stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
       stellaState.addToHistory(guildId, channelId, "assistant", finalReply);
       await sendMessage(message, finalReply);
@@ -305,11 +334,15 @@ export async function handleStellaMessage(
     }
 
     try {
-      const reply = await getAIResponse(message, session);
+      const raw = await getAIResponse(message, session);
+      const { cleaned: reply, emojis } = extractReactions(raw ?? "");
+
+      // Always apply reactions first — even on skip or reaction-only responses
+      if (emojis.length) await applyReactions(message, emojis);
 
       if (!reply || reply === SKIP_SIGNAL || reply.startsWith(SKIP_SIGNAL)) {
         stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
-        return false;
+        return emojis.length > 0; // reacted silently counts as handled
       }
 
       stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);

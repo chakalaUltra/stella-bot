@@ -3,7 +3,6 @@
   "users": {
     "1117540437016727612": {
       "samples": [
-        "Tenor gif",
         "Now send the scuba cat",
         "<@948605038299865168> yo dud",
         "Bro",
@@ -62,10 +61,11 @@
         "you're still skulling me",
         "Bad girl",
         "Detach",
-        "<@948605038299865168>"
+        "<@948605038299865168>",
+        "Stella, create my user profile card. (Embed)"
       ],
-      "avgLength": 32,
-      "lastSeen": 1781822851007
+      "avgLength": 33,
+      "lastSeen": 1781822940258
     }
   }
 }

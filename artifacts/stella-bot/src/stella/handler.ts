@@ -68,6 +68,40 @@ function shouldForwardToMistral(message: Message, sessionUserId: string): boolea
   return false;
 }
 
+// ─── Command extraction ─────────────────────────────────────────────────────
+// Strips [CMD:name args] tags from Stella's response and queues them for execution.
+
+interface PendingCommand { name: string; args: string[] }
+
+function extractCommands(text: string): { cleaned: string; commands: PendingCommand[] } {
+  const commands: PendingCommand[] = [];
+  const cleaned = text
+    .replace(/\[CMD:([^\]]+)\]/gi, (_, inner: string) => {
+      const parts = inner.trim().split(/\s+/);
+      commands.push({ name: parts[0]!.toLowerCase(), args: parts.slice(1) });
+      return "";
+    })
+    .trim();
+  return { cleaned, commands };
+}
+
+async function executeCommandTags(
+  pending: PendingCommand[],
+  message: Message,
+  client: StellaClient,
+): Promise<void> {
+  for (const { name, args } of pending) {
+    const cmd = client.prefixCommands.get(name);
+    if (!cmd) {
+      console.warn(`[Stella] Unknown prefix command: ${name}`);
+      continue;
+    }
+    await cmd.execute(message, args, client).catch((err: unknown) => {
+      console.error(`[Stella] Command "${name}" failed:`, err);
+    });
+  }
+}
+
 // ─── Reaction extraction ────────────────────────────────────────────────────
 // Strips [REACT:emoji] tags from Stella's response and returns them separately.
 
@@ -92,7 +126,11 @@ async function applyReactions(message: Message, emojis: string[]): Promise<void>
 
 // ─── System prompt ─────────────────────────────────────────────────────────
 
-async function buildSystemPrompt(message: Message, includeRecentMessages = true): Promise<string> {
+async function buildSystemPrompt(
+  message: Message,
+  client: StellaClient,
+  includeRecentMessages = true,
+): Promise<string> {
   const guild = message.guild!;
   const channel = message.channel;
 
@@ -106,6 +144,25 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     message.author.id !== STELLA_OWNER_ID
       ? stellaMemory.buildStyleDescription(message.author.id)
       : "";
+
+  // Build deduplicated command lists from the live registries
+  const seenSlash = new Set<string>();
+  const slashLines: string[] = [];
+  for (const cmd of client.commands.values()) {
+    if (seenSlash.has(cmd.data.name)) continue;
+    seenSlash.add(cmd.data.name);
+    const desc = (cmd.data as { description?: string }).description ?? "";
+    slashLines.push(`  /${cmd.data.name}${desc ? ` — ${desc}` : ""}`);
+  }
+
+  const seenPrefix = new Set<string>();
+  const prefixLines: string[] = [];
+  for (const cmd of client.prefixCommands.values()) {
+    if (seenPrefix.has(cmd.name)) continue;
+    seenPrefix.add(cmd.name);
+    const usage = cmd.usage ? ` ${cmd.usage}` : "";
+    prefixLines.push(`  ${cmd.name}${usage} — ${cmd.description}`);
+  }
 
   const parts: string[] = [
     `You are Stella — a personal AI built into a Discord bot. You're sharp, a little witty, and actually enjoyable to talk to. Not a corporate assistant. Not a help desk. Just someone competent who also has a personality.`,
@@ -159,6 +216,18 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     `- React when it genuinely fits — something funny, impressive, cursed, wholesome, etc. Don't force it.`,
     `- If you want to react but have nothing to say, just write [REACT:emoji] and nothing else — you'll react silently without sending a message.`,
     `- Don't react to every message. Maybe 1 in 4 or 5 casual messages at most.`,
+    ``,
+    `## Bot Commands`,
+    `- You know about all bot commands and can run prefix commands yourself when asked.`,
+    `- To run a prefix command, write [CMD:name arg1 arg2] anywhere in your response. Example: [CMD:ping] or [CMD:help server]`,
+    `- You can combine [CMD:...] with normal text. The command runs after your message sends.`,
+    `- Slash commands (/) cannot be run by you directly — tell the user to run those themselves.`,
+    ``,
+    `Slash commands (reference only — tell users to run these):`,
+    ...slashLines,
+    ``,
+    `Prefix commands (you can execute these with [CMD:name args]):`,
+    ...prefixLines,
     ``,
     `## Proactive Listening — When to Reply vs. Skip`,
     `- You are in active listening mode in this channel.`,
@@ -235,6 +304,7 @@ const MISTRAL_TIMEOUT_MS = 30_000;
 async function getAIResponse(
   message: Message,
   session: { history: Array<{ role: "user" | "assistant"; content: string; authorId?: string; authorName?: string }> },
+  client: StellaClient,
 ): Promise<string> {
   // Fire typing indicator immediately — before any async work
   await message.channel.sendTyping().catch(() => null);
@@ -243,7 +313,7 @@ async function getAIResponse(
   }, 8000);
 
   try {
-    const systemPrompt = await buildSystemPrompt(message);
+    const systemPrompt = await buildSystemPrompt(message, client);
 
     const historyMessages: MistralMessage[] = session.history.map((h) => ({
       role: h.role,
@@ -289,7 +359,7 @@ async function getAIResponse(
 
 export async function handleStellaMessage(
   message: Message,
-  _client: StellaClient,
+  client: StellaClient,
 ): Promise<boolean> {
   if (!message.guild) return false;
 
@@ -328,16 +398,17 @@ export async function handleStellaMessage(
     // Respond to the wake message — never stay silent on wake
     try {
       const newSession = stellaState.getSession(guildId, channelId)!;
-      const raw = await getAIResponse(message, newSession);
-      const { cleaned: reply, emojis } = extractReactions(
-        (!raw || raw === SKIP_SIGNAL || raw.startsWith(SKIP_SIGNAL)) ? "Ready." : raw,
-      );
+      const raw = await getAIResponse(message, newSession, client);
+      const normalized = (!raw || raw === SKIP_SIGNAL || raw.startsWith(SKIP_SIGNAL)) ? "Ready." : raw;
+      const { cleaned: afterCmds, commands } = extractCommands(normalized);
+      const { cleaned: reply, emojis } = extractReactions(afterCmds);
       const finalReply = reply || "Ready.";
 
       await applyReactions(message, emojis);
       stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
       stellaState.addToHistory(guildId, channelId, "assistant", finalReply);
       await sendMessage(message, finalReply);
+      if (commands.length) await executeCommandTags(commands, message, client);
     } catch (err) {
       console.error("[Stella] Mistral error on wake:", err);
       await message.channel.send({ content: "Ready." }).catch(() => null);
@@ -354,20 +425,23 @@ export async function handleStellaMessage(
     }
 
     try {
-      const raw = await getAIResponse(message, session);
-      const { cleaned: reply, emojis } = extractReactions(raw ?? "");
+      const raw = await getAIResponse(message, session, client);
+      const { cleaned: afterCmds, commands } = extractCommands(raw ?? "");
+      const { cleaned: reply, emojis } = extractReactions(afterCmds);
 
-      // Always apply reactions first — even on skip or reaction-only responses
+      // Reactions and commands fire even on skip/reaction-only responses
       if (emojis.length) await applyReactions(message, emojis);
 
       if (!reply || reply === SKIP_SIGNAL || reply.startsWith(SKIP_SIGNAL)) {
         stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
-        return emojis.length > 0; // reacted silently counts as handled
+        if (commands.length) await executeCommandTags(commands, message, client);
+        return emojis.length > 0 || commands.length > 0;
       }
 
       stellaState.addToHistory(guildId, channelId, "user", content, authorId, message.author.displayName);
       stellaState.addToHistory(guildId, channelId, "assistant", reply);
       await sendMessage(message, reply);
+      if (commands.length) await executeCommandTags(commands, message, client);
       return true;
     } catch (err) {
       console.error("[Stella] Mistral error:", err);

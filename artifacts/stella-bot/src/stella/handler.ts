@@ -8,11 +8,12 @@ import {
   MIN_LISTENING_MINUTES,
   MAX_LISTENING_MINUTES,
   SKIP_SIGNAL,
+  MISTRAL_VISION_MODEL,
 } from "./config.js";
 import { stellaState } from "./state.js";
 import { stellaMemory } from "./memory.js";
 import { gatherServerContext, getRecentMessages } from "./context.js";
-import { callMistral, type MistralMessage } from "./mistral.js";
+import { callMistral, type MistralMessage, type MistralContentPart } from "./mistral.js";
 import { parseStellaResponse, STELLA_DEFAULT_COLOR } from "./embeds.js";
 
 // ─── Wake / Sleep detection ────────────────────────────────────────────────
@@ -140,6 +141,10 @@ async function buildSystemPrompt(message: Message, includeRecentMessages = true)
     `- You may output plain text before or after an [EMBED] block in the same message.`,
     `- IMPORTANT: Output raw JSON only inside [EMBED] tags — no markdown code fences, no extra commentary inside the block.`,
     ``,
+    `## Seeing Images`,
+    `- When a user sends an image or photo, you can see it. Describe, react to, or comment on it naturally.`,
+    `- Don't announce that you're "analyzing" it — just respond like a person would when shown a picture.`,
+    ``,
     `## GIFs & Images`,
     `- You can send a GIF by writing [GIF:search terms] anywhere in your response. Example: [GIF:cat judging you]`,
     `- The search terms should be descriptive and specific — they go straight to Tenor.`,
@@ -248,7 +253,22 @@ async function getAIResponse(
           : h.content,
     }));
 
-    const userContent = `[${message.author.displayName}]: ${message.content.trim()}`;
+    // Detect image attachments — switch to vision model if any are present
+    const imageUrls = [...message.attachments.values()]
+      .filter((a) => a.contentType?.startsWith("image/"))
+      .map((a) => a.url);
+
+    const textContent = `[${message.author.displayName}]: ${message.content.trim() || "(sent an image)"}`;
+
+    const userContent: string | MistralContentPart[] = imageUrls.length
+      ? [
+          { type: "text", text: textContent },
+          ...imageUrls.map((url): MistralContentPart => ({ type: "image_url", image_url: url })),
+        ]
+      : textContent;
+
+    const model = imageUrls.length ? MISTRAL_VISION_MODEL : undefined;
+
     const messages: MistralMessage[] = [
       { role: "system", content: systemPrompt },
       ...historyMessages,
@@ -259,7 +279,7 @@ async function getAIResponse(
       setTimeout(() => reject(new Error("Mistral request timed out after 30s")), MISTRAL_TIMEOUT_MS),
     );
 
-    return await Promise.race([callMistral(messages), timeout]);
+    return await Promise.race([callMistral(messages, model), timeout]);
   } finally {
     clearInterval(typingInterval);
   }

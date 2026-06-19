@@ -1,11 +1,19 @@
 import { MISTRAL_MODEL, MISTRAL_API_URL } from "./config.js";
 
+// Content can be plain text OR a multimodal array (text + images)
+export type MistralContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: string };
+
 export interface MistralMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | MistralContentPart[];
 }
 
-export async function callMistral(messages: MistralMessage[]): Promise<string> {
+export async function callMistral(
+  messages: MistralMessage[],
+  model: string = MISTRAL_MODEL,
+): Promise<string> {
   const apiKey = process.env["MISTRAL_API_KEY"];
   if (!apiKey) throw new Error("MISTRAL_API_KEY is not set.");
 
@@ -16,7 +24,7 @@ export async function callMistral(messages: MistralMessage[]): Promise<string> {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: MISTRAL_MODEL,
+      model,
       messages,
       max_tokens: 1024,
       temperature: 0.85,

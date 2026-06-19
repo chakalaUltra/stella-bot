@@ -21,6 +21,7 @@ export const MIN_LISTENING_MINUTES = 10;
 export const MAX_LISTENING_MINUTES = 90;
 
 export const MISTRAL_MODEL = "mistral-large-latest";
+export const MISTRAL_VISION_MODEL = "pixtral-large-latest";
 export const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
 
 export const CONTEXT_MESSAGE_LIMIT = 20;

@@ -1,20 +1,11 @@
 {
-  "name": "@workspace/stella-bot",
+  "name": "stella-bot",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "deploy": "tsx src/deploy-commands.ts",
+    "dev": "ts-node src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "discord.js": "^14.18.0"
-  },
-  "devDependencies": {
-    "@types/node": "catalog:",
-    "tsx": "catalog:",
-    "typescript": "catalog:"
   }
 }
